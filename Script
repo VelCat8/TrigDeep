@@ -1,9 +1,10 @@
--- ========== TRIGGERBOT ДЛЯ XENO (С ИГНОР-ЛИСТОМ + ПОЛЕТ) ==========
+-- ========== TRIGGERBOT ДЛЯ XENO (FIXED) ==========
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
+local ContextActionService = game:GetService("ContextActionService")
 
 local LocalPlayer = Players.LocalPlayer
 local Camera = Workspace.CurrentCamera
@@ -31,8 +32,7 @@ local IgnoreListEnabled = true
 local FlyEnabled = false
 local FlySpeed = 40
 local FlyConnection = nil
-local BodyVelocity = nil
-local BodyGyro = nil
+local NoclipConnection = nil
 
 local ScriptRunning = true
 local MainConnection = nil
@@ -52,24 +52,10 @@ local function StartFly()
         humanoid.PlatformStand = true
     end
     
-    -- BodyVelocity для движения
-    BodyVelocity = Instance.new("BodyVelocity")
-    BodyVelocity.Velocity = Vector3.new(0, 0, 0)
-    BodyVelocity.MaxForce = Vector3.new(400000, 400000, 400000)
-    BodyVelocity.Parent = hrp
-    
-    -- BodyGyro для стабилизации
-    BodyGyro = Instance.new("BodyGyro")
-    BodyGyro.CFrame = hrp.CFrame
-    BodyGyro.MaxTorque = Vector3.new(400000, 400000, 400000)
-    BodyGyro.P = 1000
-    BodyGyro.Parent = hrp
-    
     FlyEnabled = true
     print("[XENO] 🚀 Полет включен (скорость: " .. FlySpeed .. ")")
     GUI.Update()
     
-    -- Цикл управления полетом
     FlyConnection = RunService.RenderStepped:Connect(function()
         if not FlyEnabled or not LocalPlayer.Character then
             StopFly()
@@ -79,35 +65,21 @@ local function StartFly()
         local hrp = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
         if not hrp then return end
         
-        if not BodyVelocity or not BodyVelocity.Parent then
-            BodyVelocity = Instance.new("BodyVelocity")
-            BodyVelocity.Velocity = Vector3.new(0, 0, 0)
-            BodyVelocity.MaxForce = Vector3.new(400000, 400000, 400000)
-            BodyVelocity.Parent = hrp
-        end
-        
-        if not BodyGyro or not BodyGyro.Parent then
-            BodyGyro = Instance.new("BodyGyro")
-            BodyGyro.CFrame = hrp.CFrame
-            BodyGyro.MaxTorque = Vector3.new(400000, 400000, 400000)
-            BodyGyro.P = 1000
-            BodyGyro.Parent = hrp
-        end
-        
-        -- Управление WASD + Space/Ctrl
         local moveVector = Vector3.new(0, 0, 0)
+        local camLook = Camera.CFrame.LookVector * Vector3.new(1, 0, 1)
+        local camRight = Camera.CFrame.RightVector
         
         if UserInputService:IsKeyDown(Enum.KeyCode.W) then
-            moveVector = moveVector + Camera.CFrame.LookVector * Vector3.new(1, 0, 1)
+            moveVector = moveVector + camLook
         end
         if UserInputService:IsKeyDown(Enum.KeyCode.S) then
-            moveVector = moveVector - Camera.CFrame.LookVector * Vector3.new(1, 0, 1)
+            moveVector = moveVector - camLook
         end
         if UserInputService:IsKeyDown(Enum.KeyCode.A) then
-            moveVector = moveVector - Camera.CFrame.RightVector
+            moveVector = moveVector - camRight
         end
         if UserInputService:IsKeyDown(Enum.KeyCode.D) then
-            moveVector = moveVector + Camera.CFrame.RightVector
+            moveVector = moveVector + camRight
         end
         if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
             moveVector = moveVector + Vector3.new(0, 1, 0)
@@ -120,8 +92,17 @@ local function StartFly()
             moveVector = moveVector.Unit * FlySpeed
         end
         
-        BodyVelocity.Velocity = moveVector
-        BodyGyro.CFrame = Camera.CFrame
+        hrp.CFrame = hrp.CFrame + moveVector
+    end)
+    
+    NoclipConnection = RunService.Heartbeat:Connect(function()
+        if not FlyEnabled or not LocalPlayer.Character then return end
+        
+        for _, part in ipairs(LocalPlayer.Character:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.CanCollide = false
+            end
+        end
     end)
 end
 
@@ -135,14 +116,9 @@ local function StopFly()
         FlyConnection = nil
     end
     
-    if BodyVelocity then
-        BodyVelocity:Destroy()
-        BodyVelocity = nil
-    end
-    
-    if BodyGyro then
-        BodyGyro:Destroy()
-        BodyGyro = nil
+    if NoclipConnection then
+        NoclipConnection:Disconnect()
+        NoclipConnection = nil
     end
     
     local char = LocalPlayer.Character
@@ -150,6 +126,12 @@ local function StopFly()
         local humanoid = char:FindFirstChild("Humanoid")
         if humanoid then
             humanoid.PlatformStand = false
+        end
+        
+        for _, part in ipairs(char:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.CanCollide = true
+            end
         end
     end
     
@@ -180,10 +162,9 @@ local function CreateGUI()
     screenGui.Parent = LocalPlayer.PlayerGui
     screenGui.ResetOnSpawn = false
     
-    -- ===== ОСНОВНАЯ ПАНЕЛЬ =====
     local mainFrame = Instance.new("Frame")
     mainFrame.Name = "MainFrame"
-    mainFrame.Size = UDim2.new(0, 220, 0, 200)
+    mainFrame.Size = UDim2.new(0, 230, 0, 235)
     mainFrame.Position = UDim2.new(0, 10, 0, 10)
     mainFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
     mainFrame.BackgroundTransparency = 0.3
@@ -194,7 +175,6 @@ local function CreateGUI()
     corner.CornerRadius = UDim.new(0, 8)
     corner.Parent = mainFrame
     
-    -- Заголовок
     local title = Instance.new("TextLabel")
     title.Size = UDim2.new(1, 0, 0, 25)
     title.Position = UDim2.new(0, 0, 0, 0)
@@ -206,7 +186,6 @@ local function CreateGUI()
     title.TextXAlignment = Enum.TextXAlignment.Center
     title.Parent = mainFrame
     
-    -- Функция создания строки статуса
     local statuses = {}
     local function MakeLine(text, y, getValue, getColor)
         local container = Instance.new("Frame")
@@ -248,7 +227,7 @@ local function CreateGUI()
             if not IgnoreListEnabled then
                 return Color3.fromRGB(255, 0, 0)
             elseif #IgnoreList > 0 then
-                return Color3.fromRGB(255, 200, 0)
+                return Color3.fromRGB(0, 255, 0)
             else
                 return Color3.fromRGB(255, 0, 0)
             end
@@ -256,9 +235,8 @@ local function CreateGUI()
     )
     statuses.fly = MakeLine("Полет", 130, function() return FlyEnabled end)
     
-    -- Подсказки по клавишам с описанием
     local hintContainer = Instance.new("Frame")
-    hintContainer.Size = UDim2.new(1, -20, 0, 55)
+    hintContainer.Size = UDim2.new(1, -20, 0, 90)
     hintContainer.Position = UDim2.new(0, 10, 0, 155)
     hintContainer.BackgroundTransparency = 1
     hintContainer.Parent = mainFrame
@@ -267,25 +245,24 @@ local function CreateGUI()
         {"F1", "Триггер"},
         {"F2", "WallCheck"},
         {"F3", "Доводка"},
-        {"F4", "Настройки"},
-        {"F5", "Рестарт"},
-        {"F6", "Игнор"},
-        {"F8", "Полет"},
+        {"F4", "Полет"},
+        {"F5", "Игнор"},
+        {"Insert", "Настройки"},
         {"Del", "Удалить"},
     }
     
     for i, hint in ipairs(hints) do
-        local col = math.floor((i - 1) / 2)
-        local row = (i - 1) % 2
+        local col = math.floor((i - 1) / 3)
+        local row = (i - 1) % 3
         
         local container = Instance.new("Frame")
-        container.Size = UDim2.new(0.5, -5, 0, 22)
-        container.Position = UDim2.new(col * 0.5, 0, row * 0.5, 0)
+        container.Size = UDim2.new(0.33, -5, 0, 25)
+        container.Position = UDim2.new(col * 0.34, 0, row * 0.34, 0)
         container.BackgroundTransparency = 1
         container.Parent = hintContainer
         
         local keyLabel = Instance.new("TextLabel")
-        keyLabel.Size = UDim2.new(0.35, 0, 1, 0)
+        keyLabel.Size = UDim2.new(0.45, 0, 1, 0)
         keyLabel.Position = UDim2.new(0, 0, 0, 0)
         keyLabel.BackgroundTransparency = 1
         keyLabel.Text = hint[1]
@@ -296,8 +273,8 @@ local function CreateGUI()
         keyLabel.Parent = container
         
         local descLabel = Instance.new("TextLabel")
-        descLabel.Size = UDim2.new(0.65, 0, 1, 0)
-        descLabel.Position = UDim2.new(0.35, 0, 0, 0)
+        descLabel.Size = UDim2.new(0.55, 0, 1, 0)
+        descLabel.Position = UDim2.new(0.45, 0, 0, 0)
         descLabel.BackgroundTransparency = 1
         descLabel.Text = hint[2]
         descLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
@@ -311,7 +288,7 @@ local function CreateGUI()
     local settingsPanel = Instance.new("Frame")
     settingsPanel.Name = "SettingsPanel"
     settingsPanel.Size = UDim2.new(0, 280, 0, 280)
-    settingsPanel.Position = UDim2.new(0, 240, 0, 10)
+    settingsPanel.Position = UDim2.new(0, 250, 0, 10)
     settingsPanel.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
     settingsPanel.BackgroundTransparency = 0.3
     settingsPanel.BorderSizePixel = 0
@@ -333,7 +310,6 @@ local function CreateGUI()
     titleS.TextXAlignment = Enum.TextXAlignment.Center
     titleS.Parent = settingsPanel
     
-    -- Функция создания ползунка
     local function MakeSlider(text, y, minVal, maxVal, getValue, setValue, displayFormat, step)
         displayFormat = displayFormat or "%.2f"
         step = step or (maxVal - minVal) / 20
@@ -432,19 +408,17 @@ local function CreateGUI()
         "%.2f", 0.01
     )
     
-    -- ===== ИГНОР-ЛИСТ =====
     local ignoreLabel = Instance.new("TextLabel")
     ignoreLabel.Size = UDim2.new(1, -20, 0, 20)
     ignoreLabel.Position = UDim2.new(0, 10, 0, 170)
     ignoreLabel.BackgroundTransparency = 1
-    ignoreLabel.Text = "👤 ИГНОР-ЛИСТ (F6 - вкл/выкл)"
+    ignoreLabel.Text = "👤 ИГНОР-ЛИСТ (F5 - вкл/выкл)"
     ignoreLabel.TextColor3 = Color3.fromRGB(255, 200, 100)
     ignoreLabel.TextSize = 12
     ignoreLabel.Font = Enum.Font.GothamBold
     ignoreLabel.TextXAlignment = Enum.TextXAlignment.Left
     ignoreLabel.Parent = settingsPanel
     
-    -- Поле для ввода ника
     local inputBox = Instance.new("TextBox")
     inputBox.Size = UDim2.new(0.55, 0, 0, 25)
     inputBox.Position = UDim2.new(0, 10, 0, 195)
@@ -460,7 +434,6 @@ local function CreateGUI()
     inputCorner.CornerRadius = UDim.new(0, 5)
     inputCorner.Parent = inputBox
     
-    -- Кнопка добавить в игнор
     local addBtn = Instance.new("TextButton")
     addBtn.Size = UDim2.new(0.35, 0, 0, 25)
     addBtn.Position = UDim2.new(0.6, 5, 0, 195)
@@ -494,7 +467,6 @@ local function CreateGUI()
     addBtn.MouseEnter:Connect(function() addBtn.BackgroundColor3 = Color3.fromRGB(60, 80, 60) end)
     addBtn.MouseLeave:Connect(function() addBtn.BackgroundColor3 = Color3.fromRGB(40, 60, 40) end)
     
-    -- Список игнорируемых игроков
     local ignoreListFrame = Instance.new("Frame")
     ignoreListFrame.Size = UDim2.new(1, -20, 0, 40)
     ignoreListFrame.Position = UDim2.new(0, 10, 0, 225)
@@ -518,7 +490,6 @@ local function CreateGUI()
     ignoreListLabel.TextWrapped = true
     ignoreListLabel.Parent = ignoreListFrame
     
-    -- Кнопка закрыть настройки
     local closeBtn = Instance.new("TextButton")
     closeBtn.Size = UDim2.new(0.3, 0, 0, 25)
     closeBtn.Position = UDim2.new(0.35, 0, 0, 250)
@@ -537,7 +508,6 @@ local function CreateGUI()
     closeBtn.MouseEnter:Connect(function() closeBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 80) end)
     closeBtn.MouseLeave:Connect(function() closeBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 60) end)
     
-    -- Функция обновления списка игнора
     local function UpdateIgnoreList()
         if #IgnoreList == 0 then
             ignoreListLabel.Text = "Пусто"
@@ -546,7 +516,6 @@ local function CreateGUI()
         end
     end
     
-    -- ===== ВОЗВРАТ =====
     return {
         Update = function()
             statuses.trigger.Text = Settings.TriggerBot and "ВКЛ" or "ВЫКЛ"
@@ -563,7 +532,7 @@ local function CreateGUI()
                 statuses.ignore.TextColor3 = Color3.fromRGB(255, 0, 0)
             elseif #IgnoreList > 0 then
                 statuses.ignore.Text = "ВКЛ"
-                statuses.ignore.TextColor3 = Color3.fromRGB(255, 200, 0)
+                statuses.ignore.TextColor3 = Color3.fromRGB(0, 255, 0)
             else
                 statuses.ignore.Text = "ВЫКЛ"
                 statuses.ignore.TextColor3 = Color3.fromRGB(255, 0, 0)
@@ -647,7 +616,6 @@ local function GetTarget()
         end
         if not part then continue end
         
-        -- ПРИЦЕЛ НА 3 СТАДА ВЫШЕ
         local aimPos = part.Position + Vector3.new(0, 3.0, 0)
         
         local pos, onScreen = Camera:WorldToViewportPoint(aimPos)
@@ -693,7 +661,6 @@ local function IsOnTarget()
         
         local head = char:FindFirstChild("Head")
         if head then
-            -- ПРИЦЕЛ НА 3 СТАДА ВЫШЕ
             local aimPos = head.Position + Vector3.new(0, 3.0, 0)
             local pos, onScreen = Camera:WorldToViewportPoint(aimPos)
             if onScreen then
@@ -709,7 +676,6 @@ local function IsOnTarget()
         
         local hrp = char:FindFirstChild("HumanoidRootPart")
         if hrp then
-            -- ПРИЦЕЛ НА 3 СТАДА ВЫШЕ
             local aimPos = hrp.Position + Vector3.new(0, 3.0, 0)
             local pos, onScreen = Camera:WorldToViewportPoint(aimPos)
             if onScreen then
@@ -797,7 +763,6 @@ end
 local function RestartScript()
     print("[XENO] ===== ПЕРЕЗАПУСК =====")
     
-    -- Останавливаем полет при перезапуске
     if FlyEnabled then
         StopFly()
     end
@@ -839,4 +804,82 @@ local function RestartScript()
     print("[XENO] ✅ Перезапуск завершен!")
 end
 
-local function Delete
+local function DeleteScript()
+    print("[XENO] Скрипт удален")
+    ScriptRunning = false
+    
+    if FlyEnabled then
+        StopFly()
+    end
+    
+    StopLoop()
+    GUI.Destroy()
+end
+
+-- ===== КЛАВИШИ (ДВА СПОСОБА ДЛЯ НАДЕЖНОСТИ) =====
+
+-- Способ 1: UserInputService
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if not ScriptRunning then return end
+    if not input.KeyCode then return end
+    
+    local key = input.KeyCode
+    
+    if key == Enum.KeyCode.F1 then ToggleTrigger() 
+    elseif key == Enum.KeyCode.F2 then ToggleWall()
+    elseif key == Enum.KeyCode.F3 then ToggleAim()
+    elseif key == Enum.KeyCode.F4 then ToggleFly()
+    elseif key == Enum.KeyCode.F5 then ToggleIgnoreList()
+    elseif key == Enum.KeyCode.Insert then ToggleSettings()
+    elseif key == Enum.KeyCode.Delete then DeleteScript()
+    end
+end)
+
+-- Способ 2: ContextActionService (резервный)
+local function OnAction(actionName, inputState, inputObject)
+    if inputState ~= Enum.UserInputState.Begin then return end
+    if not ScriptRunning then return end
+    
+    if actionName == "TriggerBot" then ToggleTrigger()
+    elseif actionName == "WallCheck" then ToggleWall()
+    elseif actionName == "AimAssist" then ToggleAim()
+    elseif actionName == "Fly" then ToggleFly()
+    elseif actionName == "IgnoreList" then ToggleIgnoreList()
+    elseif actionName == "Settings" then ToggleSettings()
+    elseif actionName == "Delete" then DeleteScript()
+    end
+end
+
+ContextActionService:BindAction("TriggerBot", OnAction, false, Enum.KeyCode.F1)
+ContextActionService:BindAction("WallCheck", OnAction, false, Enum.KeyCode.F2)
+ContextActionService:BindAction("AimAssist", OnAction, false, Enum.KeyCode.F3)
+ContextActionService:BindAction("Fly", OnAction, false, Enum.KeyCode.F4)
+ContextActionService:BindAction("IgnoreList", OnAction, false, Enum.KeyCode.F5)
+ContextActionService:BindAction("Settings", OnAction, false, Enum.KeyCode.Insert)
+ContextActionService:BindAction("Delete", OnAction, false, Enum.KeyCode.Delete)
+
+-- ===== ОБНОВЛЕНИЕ GUI ПО ЦИКЛУ =====
+local function UpdateLoop()
+    if ScriptRunning then
+        GUI.Update()
+    end
+end
+
+RunService.Heartbeat:Connect(UpdateLoop)
+
+-- ===== СТАРТ =====
+StartLoop()
+
+print("====================================")
+print("🔫 TRIGGERBOT ДЛЯ XENO (FIXED)")
+print("📢 F1 - Триггер бот")
+print("📢 F2 - Wall Check")
+print("📢 F3 - Доводка")
+print("📢 F4 - Полет (скорость 40)")
+print("📢 F5 - Игнор-лист")
+print("📢 Insert - Настройки")
+print("📢 Delete - Удалить")
+print("====================================")
+print("👤 Игнор-лист: Dimalruw83, PikaScher")
+print("✈️ Управление полетом: WASD - движение, Space - вверх, Ctrl - вниз")
