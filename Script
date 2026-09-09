@@ -55,18 +55,19 @@ local function StartFly()
     -- BodyVelocity для движения
     BodyVelocity = Instance.new("BodyVelocity")
     BodyVelocity.Velocity = Vector3.new(0, 0, 0)
-    BodyVelocity.MaxForce = Vector3.new(4000, 4000, 4000)
+    BodyVelocity.MaxForce = Vector3.new(400000, 400000, 400000)
     BodyVelocity.Parent = hrp
     
     -- BodyGyro для стабилизации
     BodyGyro = Instance.new("BodyGyro")
     BodyGyro.CFrame = hrp.CFrame
-    BodyGyro.MaxTorque = Vector3.new(4000, 4000, 4000)
+    BodyGyro.MaxTorque = Vector3.new(400000, 400000, 400000)
     BodyGyro.P = 1000
     BodyGyro.Parent = hrp
     
     FlyEnabled = true
     print("[XENO] 🚀 Полет включен (скорость: " .. FlySpeed .. ")")
+    GUI.Update()
     
     -- Цикл управления полетом
     FlyConnection = RunService.RenderStepped:Connect(function()
@@ -81,14 +82,14 @@ local function StartFly()
         if not BodyVelocity or not BodyVelocity.Parent then
             BodyVelocity = Instance.new("BodyVelocity")
             BodyVelocity.Velocity = Vector3.new(0, 0, 0)
-            BodyVelocity.MaxForce = Vector3.new(4000, 4000, 4000)
+            BodyVelocity.MaxForce = Vector3.new(400000, 400000, 400000)
             BodyVelocity.Parent = hrp
         end
         
         if not BodyGyro or not BodyGyro.Parent then
             BodyGyro = Instance.new("BodyGyro")
             BodyGyro.CFrame = hrp.CFrame
-            BodyGyro.MaxTorque = Vector3.new(4000, 4000, 4000)
+            BodyGyro.MaxTorque = Vector3.new(400000, 400000, 400000)
             BodyGyro.P = 1000
             BodyGyro.Parent = hrp
         end
@@ -153,6 +154,7 @@ local function StopFly()
     end
     
     print("[XENO] 🚀 Полет выключен")
+    GUI.Update()
 end
 
 local function ToggleFly()
@@ -181,7 +183,7 @@ local function CreateGUI()
     -- ===== ОСНОВНАЯ ПАНЕЛЬ =====
     local mainFrame = Instance.new("Frame")
     mainFrame.Name = "MainFrame"
-    mainFrame.Size = UDim2.new(0, 200, 0, 180)
+    mainFrame.Size = UDim2.new(0, 220, 0, 200)
     mainFrame.Position = UDim2.new(0, 10, 0, 10)
     mainFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
     mainFrame.BackgroundTransparency = 0.3
@@ -254,23 +256,62 @@ local function CreateGUI()
     )
     statuses.fly = MakeLine("Полет", 130, function() return FlyEnabled end)
     
-    -- Подсказка по клавишам
-    local hint = Instance.new("TextLabel")
-    hint.Size = UDim2.new(1, 0, 0, 20)
-    hint.Position = UDim2.new(0, 0, 0, 155)
-    hint.BackgroundTransparency = 1
-    hint.Text = "F1 F2 F3 F4 F5 F6 F8 Del"
-    hint.TextColor3 = Color3.fromRGB(150, 150, 150)
-    hint.TextSize = 10
-    hint.Font = Enum.Font.Gotham
-    hint.TextXAlignment = Enum.TextXAlignment.Center
-    hint.Parent = mainFrame
+    -- Подсказки по клавишам с описанием
+    local hintContainer = Instance.new("Frame")
+    hintContainer.Size = UDim2.new(1, -20, 0, 55)
+    hintContainer.Position = UDim2.new(0, 10, 0, 155)
+    hintContainer.BackgroundTransparency = 1
+    hintContainer.Parent = mainFrame
+    
+    local hints = {
+        {"F1", "Триггер"},
+        {"F2", "WallCheck"},
+        {"F3", "Доводка"},
+        {"F4", "Настройки"},
+        {"F5", "Рестарт"},
+        {"F6", "Игнор"},
+        {"F8", "Полет"},
+        {"Del", "Удалить"},
+    }
+    
+    for i, hint in ipairs(hints) do
+        local col = math.floor((i - 1) / 2)
+        local row = (i - 1) % 2
+        
+        local container = Instance.new("Frame")
+        container.Size = UDim2.new(0.5, -5, 0, 22)
+        container.Position = UDim2.new(col * 0.5, 0, row * 0.5, 0)
+        container.BackgroundTransparency = 1
+        container.Parent = hintContainer
+        
+        local keyLabel = Instance.new("TextLabel")
+        keyLabel.Size = UDim2.new(0.35, 0, 1, 0)
+        keyLabel.Position = UDim2.new(0, 0, 0, 0)
+        keyLabel.BackgroundTransparency = 1
+        keyLabel.Text = hint[1]
+        keyLabel.TextColor3 = Color3.fromRGB(255, 200, 100)
+        keyLabel.TextSize = 11
+        keyLabel.Font = Enum.Font.GothamBold
+        keyLabel.TextXAlignment = Enum.TextXAlignment.Left
+        keyLabel.Parent = container
+        
+        local descLabel = Instance.new("TextLabel")
+        descLabel.Size = UDim2.new(0.65, 0, 1, 0)
+        descLabel.Position = UDim2.new(0.35, 0, 0, 0)
+        descLabel.BackgroundTransparency = 1
+        descLabel.Text = hint[2]
+        descLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
+        descLabel.TextSize = 10
+        descLabel.Font = Enum.Font.Gotham
+        descLabel.TextXAlignment = Enum.TextXAlignment.Left
+        descLabel.Parent = container
+    end
     
     -- ===== ПАНЕЛЬ НАСТРОЕК =====
     local settingsPanel = Instance.new("Frame")
     settingsPanel.Name = "SettingsPanel"
     settingsPanel.Size = UDim2.new(0, 280, 0, 280)
-    settingsPanel.Position = UDim2.new(0, 220, 0, 10)
+    settingsPanel.Position = UDim2.new(0, 240, 0, 10)
     settingsPanel.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
     settingsPanel.BackgroundTransparency = 0.3
     settingsPanel.BorderSizePixel = 0
@@ -798,32 +839,4 @@ local function RestartScript()
     print("[XENO] ✅ Перезапуск завершен!")
 end
 
-local function DeleteScript()
-    print("[XENO] Скрипт удален")
-    ScriptRunning = false
-    
-    if FlyEnabled then
-        StopFly()
-    end
-    
-    StopLoop()
-    GUI.Destroy()
-end
-
--- ===== КЛАВИШИ =====
-UserInputService.InputBegan:Connect(function(input)
-    if not ScriptRunning then return end
-    if input.KeyCode then
-        if input.KeyCode == Enum.KeyCode.F1 then ToggleTrigger() end
-        if input.KeyCode == Enum.KeyCode.F2 then ToggleWall() end
-        if input.KeyCode == Enum.KeyCode.F3 then ToggleAim() end
-        if input.KeyCode == Enum.KeyCode.F4 then ToggleSettings() end
-        if input.KeyCode == Enum.KeyCode.F5 then RestartScript() end
-        if input.KeyCode == Enum.KeyCode.F6 then ToggleIgnoreList() end
-        if input.KeyCode == Enum.KeyCode.F8 then ToggleFly() end
-        if input.KeyCode == Enum.KeyCode.Delete then DeleteScript() end
-    end
-end)
-
--- ===== СТАРТ =====
-StartLoop()
+local function Delete
