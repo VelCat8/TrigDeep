@@ -1,0 +1,675 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Workspace = game:GetService("Workspace")
+
+local LocalPlayer = Players.LocalPlayer
+local Camera = Workspace.CurrentCamera
+local Mouse = LocalPlayer:GetMouse()
+
+-- ===== НАСТРОЙКИ =====
+local Settings = {
+    TriggerBot = false,
+    WallCheck = true,
+    AimAssist = true,
+    Smoothness = 0.80,
+    FOV = 400,
+    TriggerRadius = 60,
+    ShotDelay = 0.05,
+}
+
+-- ===== ИГНОР-ЛИСТ =====
+local IgnoreList = {
+    "Dimalruw83",
+    "PikaScher"
+}
+local IgnoreListEnabled = true
+
+local ScriptRunning = true
+local MainConnection = nil
+local SettingsOpen = false
+
+-- ===== СОЗДАНИЕ GUI =====
+local function CreateGUI()
+    pcall(function()
+        if LocalPlayer.PlayerGui:FindFirstChild("TriggerGUI") then
+            LocalPlayer.PlayerGui.TriggerGUI:Destroy()
+        end
+    end)
+    
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "TriggerGUI"
+    screenGui.Parent = LocalPlayer.PlayerGui
+    screenGui.ResetOnSpawn = false
+    
+    -- ===== ОСНОВНАЯ ПАНЕЛЬ =====
+    local mainFrame = Instance.new("Frame")
+    mainFrame.Name = "MainFrame"
+    mainFrame.Size = UDim2.new(0, 200, 0, 160)
+    mainFrame.Position = UDim2.new(0, 10, 0, 10)
+    mainFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    mainFrame.BackgroundTransparency = 0.3
+    mainFrame.BorderSizePixel = 0
+    mainFrame.Parent = screenGui
+    
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 8)
+    corner.Parent = mainFrame
+    
+    -- Заголовок
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, 0, 0, 25)
+    title.Position = UDim2.new(0, 0, 0, 0)
+    title.BackgroundTransparency = 1
+    title.Text = "🔫 TRIGGERBOT"
+    title.TextColor3 = Color3.fromRGB(255, 255, 255)
+    title.TextSize = 16
+    title.Font = Enum.Font.GothamBold
+    title.TextXAlignment = Enum.TextXAlignment.Center
+    title.Parent = mainFrame
+    
+    -- Функция создания строки статуса
+    local statuses = {}
+    local function MakeLine(text, y, getValue, getColor)
+        local container = Instance.new("Frame")
+        container.Size = UDim2.new(1, -20, 0, 22)
+        container.Position = UDim2.new(0, 10, 0, y)
+        container.BackgroundTransparency = 1
+        container.Parent = mainFrame
+        
+        local label = Instance.new("TextLabel")
+        label.Size = UDim2.new(0.6, 0, 1, 0)
+        label.BackgroundTransparency = 1
+        label.Text = text
+        label.TextColor3 = Color3.fromRGB(200, 200, 200)
+        label.TextSize = 13
+        label.Font = Enum.Font.Gotham
+        label.TextXAlignment = Enum.TextXAlignment.Left
+        label.Parent = container
+        
+        local status = Instance.new("TextLabel")
+        status.Size = UDim2.new(0.4, 0, 1, 0)
+        status.Position = UDim2.new(0.6, 0, 0, 0)
+        status.BackgroundTransparency = 1
+        status.Text = getValue() and "ВКЛ" or "ВЫКЛ"
+        status.TextColor3 = getColor and getColor() or (getValue() and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0))
+        status.TextSize = 13
+        status.Font = Enum.Font.GothamBold
+        status.TextXAlignment = Enum.TextXAlignment.Right
+        status.Parent = container
+        
+        return status
+    end
+    
+    statuses.trigger = MakeLine("TriggerBot", 30, function() return Settings.TriggerBot end)
+    statuses.wall = MakeLine("WallCheck", 55, function() return Settings.WallCheck end)
+    statuses.aim = MakeLine("Доводка", 80, function() return Settings.AimAssist end)
+    statuses.ignore = MakeLine("Игнор-лист", 105, 
+        function() return IgnoreListEnabled and #IgnoreList > 0 end,
+        function() 
+            if not IgnoreListEnabled then
+                return Color3.fromRGB(255, 0, 0)
+            elseif #IgnoreList > 0 then
+                return Color3.fromRGB(255, 200, 0)
+            else
+                return Color3.fromRGB(255, 0, 0)
+            end
+        end
+    )
+    
+    -- Подсказка по клавишам
+    local hint = Instance.new("TextLabel")
+    hint.Size = UDim2.new(1, 0, 0, 20)
+    hint.Position = UDim2.new(0, 0, 0, 130)
+    hint.BackgroundTransparency = 1
+    hint.Text = "F1 F2 F3 F4 F5 F6 Del"
+    hint.TextColor3 = Color3.fromRGB(150, 150, 150)
+    hint.TextSize = 10
+    hint.Font = Enum.Font.Gotham
+    hint.TextXAlignment = Enum.TextXAlignment.Center
+    hint.Parent = mainFrame
+    
+    -- ===== ПАНЕЛЬ НАСТРОЕК =====
+    local settingsPanel = Instance.new("Frame")
+    settingsPanel.Name = "SettingsPanel"
+    settingsPanel.Size = UDim2.new(0, 280, 0, 280)
+    settingsPanel.Position = UDim2.new(0, 220, 0, 10)
+    settingsPanel.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    settingsPanel.BackgroundTransparency = 0.3
+    settingsPanel.BorderSizePixel = 0
+    settingsPanel.Visible = false
+    settingsPanel.Parent = screenGui
+    
+    local cornerS = Instance.new("UICorner")
+    cornerS.CornerRadius = UDim.new(0, 8)
+    cornerS.Parent = settingsPanel
+    
+    local titleS = Instance.new("TextLabel")
+    titleS.Size = UDim2.new(1, 0, 0, 25)
+    titleS.Position = UDim2.new(0, 0, 0, 0)
+    titleS.BackgroundTransparency = 1
+    titleS.Text = "⚙️ НАСТРОЙКИ"
+    titleS.TextColor3 = Color3.fromRGB(255, 255, 255)
+    titleS.TextSize = 16
+    titleS.Font = Enum.Font.GothamBold
+    titleS.TextXAlignment = Enum.TextXAlignment.Center
+    titleS.Parent = settingsPanel
+    
+    -- Функция создания ползунка
+    local function MakeSlider(text, y, minVal, maxVal, getValue, setValue, displayFormat, step)
+        displayFormat = displayFormat or "%.2f"
+        step = step or (maxVal - minVal) / 20
+        
+        local container = Instance.new("Frame")
+        container.Size = UDim2.new(1, -20, 0, 30)
+        container.Position = UDim2.new(0, 10, 0, y)
+        container.BackgroundTransparency = 1
+        container.Parent = settingsPanel
+        
+        local label = Instance.new("TextLabel")
+        label.Size = UDim2.new(0.5, 0, 1, 0)
+        label.Position = UDim2.new(0, 0, 0, 0)
+        label.BackgroundTransparency = 1
+        label.Text = text
+        label.TextColor3 = Color3.fromRGB(200, 200, 200)
+        label.TextSize = 12
+        label.Font = Enum.Font.Gotham
+        label.TextXAlignment = Enum.TextXAlignment.Left
+        label.Parent = container
+        
+        local valueLabel = Instance.new("TextLabel")
+        valueLabel.Name = "ValueLabel"
+        valueLabel.Size = UDim2.new(0.2, 0, 1, 0)
+        valueLabel.Position = UDim2.new(0.8, 0, 0, 0)
+        valueLabel.BackgroundTransparency = 1
+        valueLabel.Text = string.format(displayFormat, getValue())
+        valueLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+        valueLabel.TextSize = 12
+        valueLabel.Font = Enum.Font.GothamBold
+        valueLabel.TextXAlignment = Enum.TextXAlignment.Right
+        valueLabel.Parent = container
+        
+        local minus = Instance.new("TextButton")
+        minus.Size = UDim2.new(0, 22, 1, 0)
+        minus.Position = UDim2.new(0.52, 0, 0, 0)
+        minus.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
+        minus.Text = "−"
+        minus.TextColor3 = Color3.fromRGB(255, 255, 255)
+        minus.TextSize = 16
+        minus.Font = Enum.Font.GothamBold
+        minus.Parent = container
+        
+        local plus = Instance.new("TextButton")
+        plus.Size = UDim2.new(0, 22, 1, 0)
+        plus.Position = UDim2.new(0.58, 0, 0, 0)
+        plus.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
+        plus.Text = "+"
+        plus.TextColor3 = Color3.fromRGB(255, 255, 255)
+        plus.TextSize = 16
+        plus.Font = Enum.Font.GothamBold
+        plus.Parent = container
+        
+        local c1 = Instance.new("UICorner")
+        c1.CornerRadius = UDim.new(0, 4)
+        c1.Parent = minus
+        local c2 = Instance.new("UICorner")
+        c2.CornerRadius = UDim.new(0, 4)
+        c2.Parent = plus
+        
+        local function UpdateValue(newVal)
+            newVal = math.max(minVal, math.min(maxVal, newVal))
+            setValue(newVal)
+            valueLabel.Text = string.format(displayFormat, newVal)
+        end
+        
+        minus.MouseButton1Click:Connect(function() UpdateValue(getValue() - step) end)
+        plus.MouseButton1Click:Connect(function() UpdateValue(getValue() + step) end)
+        
+        minus.MouseEnter:Connect(function() minus.BackgroundColor3 = Color3.fromRGB(60, 60, 80) end)
+        minus.MouseLeave:Connect(function() minus.BackgroundColor3 = Color3.fromRGB(40, 40, 60) end)
+        plus.MouseEnter:Connect(function() plus.BackgroundColor3 = Color3.fromRGB(60, 60, 80) end)
+        plus.MouseLeave:Connect(function() plus.BackgroundColor3 = Color3.fromRGB(40, 40, 60) end)
+        
+        return valueLabel
+    end
+    
+    MakeSlider("Плавность", 30, 0.05, 0.95, 
+        function() return Settings.Smoothness end,
+        function(v) Settings.Smoothness = v end,
+        "%.2f", 0.05
+    )
+    MakeSlider("Радиус доводки", 65, 50, 500,
+        function() return Settings.FOV end,
+        function(v) Settings.FOV = v end,
+        "%.0f", 25
+    )
+    MakeSlider("Радиус триггера", 100, 20, 150,
+        function() return Settings.TriggerRadius end,
+        function(v) Settings.TriggerRadius = v end,
+        "%.0f", 5
+    )
+    MakeSlider("Задержка (сек)", 135, 0.01, 0.50,
+        function() return Settings.ShotDelay end,
+        function(v) Settings.ShotDelay = v end,
+        "%.2f", 0.01
+    )
+    
+    -- ===== ИГНОР-ЛИСТ =====
+    local ignoreLabel = Instance.new("TextLabel")
+    ignoreLabel.Size = UDim2.new(1, -20, 0, 20)
+    ignoreLabel.Position = UDim2.new(0, 10, 0, 170)
+    ignoreLabel.BackgroundTransparency = 1
+    ignoreLabel.Text = "👤 ИГНОР-ЛИСТ (F6 - вкл/выкл)"
+    ignoreLabel.TextColor3 = Color3.fromRGB(255, 200, 100)
+    ignoreLabel.TextSize = 12
+    ignoreLabel.Font = Enum.Font.GothamBold
+    ignoreLabel.TextXAlignment = Enum.TextXAlignment.Left
+    ignoreLabel.Parent = settingsPanel
+    
+    -- Поле для ввода ника
+    local inputBox = Instance.new("TextBox")
+    inputBox.Size = UDim2.new(0.55, 0, 0, 25)
+    inputBox.Position = UDim2.new(0, 10, 0, 195)
+    inputBox.BackgroundColor3 = Color3.fromRGB(30, 30, 50)
+    inputBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+    inputBox.Text = ""
+    inputBox.PlaceholderText = "Введите ник"
+    inputBox.TextSize = 13
+    inputBox.Font = Enum.Font.Gotham
+    inputBox.Parent = settingsPanel
+    
+    local inputCorner = Instance.new("UICorner")
+    inputCorner.CornerRadius = UDim.new(0, 5)
+    inputCorner.Parent = inputBox
+    
+    -- Кнопка добавить в игнор
+    local addBtn = Instance.new("TextButton")
+    addBtn.Size = UDim2.new(0.35, 0, 0, 25)
+    addBtn.Position = UDim2.new(0.6, 5, 0, 195)
+    addBtn.BackgroundColor3 = Color3.fromRGB(40, 60, 40)
+    addBtn.Text = "➕ Добавить"
+    addBtn.TextColor3 = Color3.fromRGB(0, 255, 0)
+    addBtn.TextSize = 12
+    addBtn.Font = Enum.Font.GothamBold
+    addBtn.Parent = settingsPanel
+    
+    local addCorner = Instance.new("UICorner")
+    addCorner.CornerRadius = UDim.new(0, 5)
+    addCorner.Parent = addBtn
+    
+    addBtn.MouseButton1Click:Connect(function()
+        local name = inputBox.Text:gsub("%s+", "")
+        if name ~= "" and name ~= LocalPlayer.Name then
+            if not table.find(IgnoreList, name) then
+                table.insert(IgnoreList, name)
+                inputBox.Text = ""
+                print("[XENO] Добавлен в игнор:", name)
+                UpdateIgnoreList()
+                GUI.Update()
+            else
+                print("[XENO] Игрок уже в игнор-листе:", name)
+                inputBox.Text = ""
+            end
+        end
+    end)
+    
+    addBtn.MouseEnter:Connect(function() addBtn.BackgroundColor3 = Color3.fromRGB(60, 80, 60) end)
+    addBtn.MouseLeave:Connect(function() addBtn.BackgroundColor3 = Color3.fromRGB(40, 60, 40) end)
+    
+    -- Список игнорируемых игроков
+    local ignoreListFrame = Instance.new("Frame")
+    ignoreListFrame.Size = UDim2.new(1, -20, 0, 40)
+    ignoreListFrame.Position = UDim2.new(0, 10, 0, 225)
+    ignoreListFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 40)
+    ignoreListFrame.BackgroundTransparency = 0.5
+    ignoreListFrame.BorderSizePixel = 0
+    ignoreListFrame.Parent = settingsPanel
+    
+    local ignoreCorner = Instance.new("UICorner")
+    ignoreCorner.CornerRadius = UDim.new(0, 5)
+    ignoreCorner.Parent = ignoreListFrame
+    
+    local ignoreListLabel = Instance.new("TextLabel")
+    ignoreListLabel.Name = "IgnoreListLabel"
+    ignoreListLabel.Size = UDim2.new(1, 0, 1, 0)
+    ignoreListLabel.BackgroundTransparency = 1
+    ignoreListLabel.Text = ""
+    ignoreListLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
+    ignoreListLabel.TextSize = 11
+    ignoreListLabel.Font = Enum.Font.Gotham
+    ignoreListLabel.TextWrapped = true
+    ignoreListLabel.Parent = ignoreListFrame
+    
+    -- Кнопка закрыть настройки
+    local closeBtn = Instance.new("TextButton")
+    closeBtn.Size = UDim2.new(0.3, 0, 0, 25)
+    closeBtn.Position = UDim2.new(0.35, 0, 0, 250)
+    closeBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
+    closeBtn.Text = "Закрыть"
+    closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    closeBtn.TextSize = 12
+    closeBtn.Font = Enum.Font.GothamBold
+    closeBtn.Parent = settingsPanel
+    
+    local cClose = Instance.new("UICorner")
+    cClose.CornerRadius = UDim.new(0, 5)
+    cClose.Parent = closeBtn
+    
+    closeBtn.MouseButton1Click:Connect(function() ToggleSettings() end)
+    closeBtn.MouseEnter:Connect(function() closeBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 80) end)
+    closeBtn.MouseLeave:Connect(function() closeBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 60) end)
+    
+    -- Функция обновления списка игнора
+    local function UpdateIgnoreList()
+        if #IgnoreList == 0 then
+            ignoreListLabel.Text = "Пусто"
+        else
+            ignoreListLabel.Text = table.concat(IgnoreList, ", ")
+        end
+    end
+    
+    -- ===== ВОЗВРАТ =====
+    return {
+        Update = function()
+            statuses.trigger.Text = Settings.TriggerBot and "ВКЛ" or "ВЫКЛ"
+            statuses.trigger.TextColor3 = Settings.TriggerBot and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
+            
+            statuses.wall.Text = Settings.WallCheck and "ВКЛ" or "ВЫКЛ"
+            statuses.wall.TextColor3 = Settings.WallCheck and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
+            
+            statuses.aim.Text = Settings.AimAssist and "ВКЛ" or "ВЫКЛ"
+            statuses.aim.TextColor3 = Settings.AimAssist and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
+            
+            if not IgnoreListEnabled then
+                statuses.ignore.Text = "ВЫКЛ"
+                statuses.ignore.TextColor3 = Color3.fromRGB(255, 0, 0)
+            elseif #IgnoreList > 0 then
+                statuses.ignore.Text = "ВКЛ"
+                statuses.ignore.TextColor3 = Color3.fromRGB(255, 200, 0)
+            else
+                statuses.ignore.Text = "ВЫКЛ"
+                statuses.ignore.TextColor3 = Color3.fromRGB(255, 0, 0)
+            end
+            
+            UpdateIgnoreList()
+        end,
+        Destroy = function()
+            screenGui:Destroy()
+        end,
+        ToggleSettings = function()
+            settingsPanel.Visible = not settingsPanel.Visible
+            SettingsOpen = settingsPanel.Visible
+            if settingsPanel.Visible then
+                UpdateIgnoreList()
+            end
+        end,
+        CloseSettings = function()
+            settingsPanel.Visible = false
+            SettingsOpen = false
+        end
+    }
+end
+
+local GUI = CreateGUI()
+
+-- ===== ФУНКЦИИ =====
+local function IsIgnored(playerName)
+    if not IgnoreListEnabled then return false end
+    for _, name in ipairs(IgnoreList) do
+        if name:lower() == playerName:lower() then
+            return true
+        end
+    end
+    return false
+end
+
+local function IsVisible(part)
+    if not part or not LocalPlayer.Character then return false end
+    
+    local origin = LocalPlayer.Character:FindFirstChild("Head")
+    if not origin then return false end
+    
+    local params = RaycastParams.new()
+    params.FilterType = Enum.RaycastFilterType.Blacklist
+    params.FilterDescendantsInstances = {LocalPlayer.Character, Camera}
+    
+    local result = Workspace:Raycast(origin.Position, (part.Position - origin.Position).Unit * (origin.Position - part.Position).Magnitude, params)
+    
+    if not result then return true end
+    
+    local hit = result.Instance
+    if hit then
+        local player = Players:GetPlayerFromCharacter(hit.Parent)
+        if player then return true end
+    end
+    
+    return false
+end
+
+local function GetTarget()
+    if not LocalPlayer.Character then return nil end
+    
+    local center = Vector2.new(Mouse.X, Mouse.Y)
+    local best = nil
+    local bestDist = math.huge
+    
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player == LocalPlayer then continue end
+        if IsIgnored(player.Name) then continue end
+        
+        local char = player.Character
+        if not char then continue end
+        
+        local part = char:FindFirstChild("Head")
+        if not part then
+            part = char:FindFirstChild("HumanoidRootPart")
+        end
+        if not part then continue end
+        
+        local aimPos = part.Position + Vector3.new(0, 4.0, 0)
+        
+        local pos, onScreen = Camera:WorldToViewportPoint(aimPos)
+        if not onScreen then continue end
+        
+        local dist = (Vector2.new(pos.X, pos.Y) - center).Magnitude
+        
+        if dist > Settings.FOV then continue end
+        if Settings.WallCheck and not IsVisible(part) then continue end
+        
+        if dist < bestDist then
+            bestDist = dist
+            best = {Player = player, Part = part, ScreenPos = Vector2.new(pos.X, pos.Y), Dist = dist}
+        end
+    end
+    
+    return best
+end
+
+local function DoAimAssist()
+    if not Settings.TriggerBot or not Settings.AimAssist then return end
+    
+    local target = GetTarget()
+    if not target then return end
+    
+    local dx = target.ScreenPos.X - Mouse.X
+    local dy = target.ScreenPos.Y - Mouse.Y
+    
+    mousemoverel(dx * Settings.Smoothness, dy * Settings.Smoothness * 1.25)
+end
+
+local function IsOnTarget()
+    if not LocalPlayer.Character then return false end
+    
+    local center = Vector2.new(Mouse.X, Mouse.Y)
+    
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player == LocalPlayer then continue end
+        if IsIgnored(player.Name) then continue end
+        
+        local char = player.Character
+        if not char then continue end
+        
+        local head = char:FindFirstChild("Head")
+        if head then
+            local aimPos = head.Position + Vector3.new(0, 4.0, 0)
+            local pos, onScreen = Camera:WorldToViewportPoint(aimPos)
+            if onScreen then
+                local dist = (Vector2.new(pos.X, pos.Y) - center).Magnitude
+                if dist < Settings.TriggerRadius then
+                    if Settings.WallCheck and not IsVisible(head) then
+                        return false
+                    end
+                    return true
+                end
+            end
+        end
+        
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            local aimPos = hrp.Position + Vector3.new(0, 4.0, 0)
+            local pos, onScreen = Camera:WorldToViewportPoint(aimPos)
+            if onScreen then
+                local dist = (Vector2.new(pos.X, pos.Y) - center).Magnitude
+                if dist < Settings.TriggerRadius + 30 then
+                    if Settings.WallCheck and not IsVisible(hrp) then
+                        return false
+                    end
+                    return true
+                end
+            end
+        end
+    end
+    
+    return false
+end
+
+local LastShot = 0
+
+local function MainLoop()
+    if not Settings.TriggerBot then return end
+    
+    DoAimAssist()
+    
+    if IsOnTarget() and tick() - LastShot > Settings.ShotDelay then
+        pcall(function()
+            mouse1click()
+        end)
+        LastShot = tick()
+    end
+end
+
+-- ===== ЗАПУСК/ОСТАНОВКА =====
+local function StartLoop()
+    if MainConnection then
+        MainConnection:Disconnect()
+        MainConnection = nil
+    end
+    MainConnection = RunService.RenderStepped:Connect(function()
+        pcall(MainLoop)
+    end)
+end
+
+local function StopLoop()
+    if MainConnection then
+        MainConnection:Disconnect()
+        MainConnection = nil
+    end
+end
+
+-- ===== ПЕРЕКЛЮЧЕНИЯ =====
+local function ToggleSettings()
+    if not ScriptRunning then return end
+    GUI.ToggleSettings()
+end
+
+local function ToggleTrigger()
+    if not ScriptRunning then return end
+    Settings.TriggerBot = not Settings.TriggerBot
+    GUI.Update()
+    print("[XENO] TriggerBot:", Settings.TriggerBot and "ON" or "OFF")
+end
+
+local function ToggleWall()
+    if not ScriptRunning then return end
+    Settings.WallCheck = not Settings.WallCheck
+    GUI.Update()
+    print("[XENO] WallCheck:", Settings.WallCheck and "ON" or "OFF")
+end
+
+local function ToggleAim()
+    if not ScriptRunning then return end
+    Settings.AimAssist = not Settings.AimAssist
+    GUI.Update()
+    print("[XENO] AimAssist:", Settings.AimAssist and "ON" or "OFF")
+end
+
+local function ToggleIgnoreList()
+    if not ScriptRunning then return end
+    IgnoreListEnabled = not IgnoreListEnabled
+    GUI.Update()
+    print("[XENO] Игнор-лист:", IgnoreListEnabled and "ВКЛЮЧЕН" or "ВЫКЛЮЧЕН")
+end
+
+local function RestartScript()
+    print("[XENO] ===== ПЕРЕЗАПУСК =====")
+    
+    local savedSettings = {
+        TriggerBot = Settings.TriggerBot,
+        WallCheck = Settings.WallCheck,
+        AimAssist = Settings.AimAssist,
+        Smoothness = Settings.Smoothness,
+        FOV = Settings.FOV,
+        TriggerRadius = Settings.TriggerRadius,
+        ShotDelay = Settings.ShotDelay,
+    }
+    local savedIgnoreList = {}
+    for _, name in ipairs(IgnoreList) do
+        table.insert(savedIgnoreList, name)
+    end
+    local savedIgnoreEnabled = IgnoreListEnabled
+    
+    StopLoop()
+    GUI.CloseSettings()
+    GUI.Destroy()
+    GUI = CreateGUI()
+    
+    Settings.TriggerBot = savedSettings.TriggerBot
+    Settings.WallCheck = savedSettings.WallCheck
+    Settings.AimAssist = savedSettings.AimAssist
+    Settings.Smoothness = savedSettings.Smoothness
+    Settings.FOV = savedSettings.FOV
+    Settings.TriggerRadius = savedSettings.TriggerRadius
+    Settings.ShotDelay = savedSettings.ShotDelay
+    
+    IgnoreList = savedIgnoreList
+    IgnoreListEnabled = savedIgnoreEnabled
+    
+    GUI.Update()
+    StartLoop()
+    
+    print("[XENO] ✅ Перезапуск завершен!")
+end
+
+local function DeleteScript()
+    print("[XENO] Скрипт удален")
+    ScriptRunning = false
+    StopLoop()
+    GUI.Destroy()
+end
+
+-- ===== КЛАВИШИ =====
+UserInputService.InputBegan:Connect(function(input)
+    if not ScriptRunning then return end
+    if input.KeyCode then
+        if input.KeyCode == Enum.KeyCode.F1 then ToggleTrigger() end
+        if input.KeyCode == Enum.KeyCode.F2 then ToggleWall() end
+        if input.KeyCode == Enum.KeyCode.F3 then ToggleAim() end
+        if input.KeyCode == Enum.KeyCode.F4 then ToggleSettings() end
+        if input.KeyCode == Enum.KeyCode.F5 then RestartScript() end
+        if input.KeyCode == Enum.KeyCode.F6 then ToggleIgnoreList() end
+        if input.KeyCode == Enum.KeyCode.Delete then DeleteScript() end
+    end
+end)
+
+-- ===== СТАРТ =====
+StartLoop()
