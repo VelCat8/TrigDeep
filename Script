@@ -1,4 +1,4 @@
--- ========== TRIGGERBOT ДЛЯ XENO (FIXED) ==========
+-- ========== TRIGGERBOT ДЛЯ XENO (FIXED ESP) ==========
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -37,6 +37,178 @@ local NoclipConnection = nil
 local ScriptRunning = true
 local MainConnection = nil
 local SettingsOpen = false
+
+-- ===== ESP (ВХ) =====
+local ESPEnabled = false
+local ESPConnection = nil
+local ESPObjects = {}
+local ESP_MAX_DISTANCE = 300
+
+-- ===== ФУНКЦИИ =====
+local function IsIgnored(playerName)
+    if not IgnoreListEnabled then return false end
+    for _, name in ipairs(IgnoreList) do
+        if name:lower() == playerName:lower() then
+            return true
+        end
+    end
+    return false
+end
+
+-- ===== ФУНКЦИИ ESP =====
+local function ClearESP()
+    for _, obj in ipairs(ESPObjects) do
+        pcall(function() 
+            if obj and obj.Parent then
+                obj:Destroy() 
+            end
+        end)
+    end
+    ESPObjects = {}
+end
+
+local function CreateESP()
+    ClearESP()
+    
+    if not ESPEnabled then return end
+    if not LocalPlayer.Character then return end
+    
+    local myPos = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not myPos then return end
+    myPos = myPos.Position
+    
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player == LocalPlayer then continue end
+        if IsIgnored(player.Name) then continue end
+        
+        local char = player.Character
+        if not char then continue end
+        
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if not hrp then continue end
+        
+        local dist = (myPos - hrp.Position).Magnitude
+        if dist > ESP_MAX_DISTANCE then continue end
+        
+        local humanoid = char:FindFirstChild("Humanoid")
+        if not humanoid or humanoid.Health <= 0 then continue end
+        
+        -- РАМКА
+        local box = Instance.new("BoxHandleAdornment")
+        box.Size = Vector3.new(4.5, 7, 2.5)
+        box.Adornee = hrp
+        box.Color3 = Color3.fromRGB(255, 0, 0)
+        box.Transparency = 0.3
+        box.ZIndex = 0
+        box.AlwaysOnTop = true
+        box.Parent = hrp
+        table.insert(ESPObjects, box)
+        
+        -- НИК НАД ГОЛОВОЙ
+        local head = char:FindFirstChild("Head")
+        local billboard = Instance.new("BillboardGui")
+        billboard.Size = UDim2.new(0, 120, 0, 30)
+        billboard.Adornee = head or hrp
+        billboard.StudsOffset = Vector3.new(0, 4.5, 0)
+        billboard.AlwaysOnTop = true
+        billboard.Parent = hrp
+        table.insert(ESPObjects, billboard)
+        
+        local textLabel = Instance.new("TextLabel")
+        textLabel.Size = UDim2.new(1, 0, 1, 0)
+        textLabel.BackgroundTransparency = 1
+        textLabel.Text = player.Name
+        textLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+        textLabel.TextSize = 16
+        textLabel.Font = Enum.Font.GothamBold
+        textLabel.TextStrokeTransparency = 0.2
+        textLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+        textLabel.Parent = billboard
+        
+        -- ДИСТАНЦИЯ (обновляется в цикле)
+        local distLabel = Instance.new("TextLabel")
+        distLabel.Name = "DistLabel"
+        distLabel.Size = UDim2.new(1, 0, 0, 16)
+        distLabel.Position = UDim2.new(0, 0, 1, 0)
+        distLabel.BackgroundTransparency = 1
+        distLabel.Text = math.floor(dist) .. " м"
+        distLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+        distLabel.TextSize = 12
+        distLabel.Font = Enum.Font.Gotham
+        distLabel.Parent = billboard
+    end
+end
+
+-- Обновление дистанции в ESP
+local function UpdateESPDistances()
+    if not ESPEnabled then return end
+    if not LocalPlayer.Character then return end
+    
+    local myPos = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not myPos then return end
+    myPos = myPos.Position
+    
+    for _, obj in ipairs(ESPObjects) do
+        if obj:IsA("BillboardGui") then
+            local hrp = obj.Parent
+            if hrp and hrp:IsA("BasePart") then
+                local dist = (myPos - hrp.Position).Magnitude
+                for _, child in ipairs(obj:GetChildren()) do
+                    if child:IsA("TextLabel") and child.Name == "DistLabel" then
+                        child.Text = math.floor(dist) .. " м"
+                    end
+                end
+            end
+        end
+    end
+end
+
+local function ToggleESP()
+    if not ScriptRunning then return end
+    
+    ESPEnabled = not ESPEnabled
+    
+    if ESPEnabled then
+        print("[XENO] 👁️ ESP ВКЛЮЧЕН (дальность: " .. ESP_MAX_DISTANCE .. " м)")
+        CreateESP()
+        
+        -- Обновление ESP каждые 0.3 секунды
+        ESPConnection = RunService.Heartbeat:Connect(function()
+            if ESPEnabled then
+                -- Обновляем дистанции
+                UpdateESPDistances()
+                -- Проверяем мертвых игроков и пересоздаем если нужно
+                local needRebuild = false
+                for _, obj in ipairs(ESPObjects) do
+                    if obj:IsA("BillboardGui") then
+                        local parent = obj.Adornee
+                        if parent then
+                            local char = parent.Parent
+                            if char and char:IsA("Model") then
+                                local humanoid = char:FindFirstChild("Humanoid")
+                                if humanoid and humanoid.Health <= 0 then
+                                    needRebuild = true
+                                    break
+                                end
+                            end
+                        end
+                    end
+                end
+                if needRebuild then
+                    CreateESP()
+                end
+            end
+        end)
+    else
+        print("[XENO] 👁️ ESP ВЫКЛЮЧЕН")
+        if ESPConnection then
+            ESPConnection:Disconnect()
+            ESPConnection = nil
+        end
+        ClearESP()
+    end
+    GUI.Update()
+end
 
 -- ===== ФУНКЦИИ ПОЛЕТА =====
 local function StartFly()
@@ -164,7 +336,7 @@ local function CreateGUI()
     
     local mainFrame = Instance.new("Frame")
     mainFrame.Name = "MainFrame"
-    mainFrame.Size = UDim2.new(0, 230, 0, 235)
+    mainFrame.Size = UDim2.new(0, 230, 0, 260)
     mainFrame.Position = UDim2.new(0, 10, 0, 10)
     mainFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
     mainFrame.BackgroundTransparency = 0.3
@@ -234,19 +406,21 @@ local function CreateGUI()
         end
     )
     statuses.fly = MakeLine("Полет", 130, function() return FlyEnabled end)
+    statuses.esp = MakeLine("ESP (ВХ)", 155, function() return ESPEnabled end)
     
     local hintContainer = Instance.new("Frame")
     hintContainer.Size = UDim2.new(1, -20, 0, 90)
-    hintContainer.Position = UDim2.new(0, 10, 0, 155)
+    hintContainer.Position = UDim2.new(0, 10, 0, 180)
     hintContainer.BackgroundTransparency = 1
     hintContainer.Parent = mainFrame
     
     local hints = {
         {"F1", "Триггер"},
-        {"F2", "WallCheck"},
+        {"F2", "ESP"},
         {"F3", "Доводка"},
         {"F4", "Полет"},
         {"F5", "Игнор"},
+        {"F6", "WallCheck"},
         {"Insert", "Настройки"},
         {"Del", "Удалить"},
     }
@@ -457,6 +631,7 @@ local function CreateGUI()
                 print("[XENO] Добавлен в игнор:", name)
                 UpdateIgnoreList()
                 GUI.Update()
+                if ESPEnabled then CreateESP() end
             else
                 print("[XENO] Игрок уже в игнор-листе:", name)
                 inputBox.Text = ""
@@ -504,7 +679,11 @@ local function CreateGUI()
     cClose.CornerRadius = UDim.new(0, 5)
     cClose.Parent = closeBtn
     
-    closeBtn.MouseButton1Click:Connect(function() ToggleSettings() end)
+    closeBtn.MouseButton1Click:Connect(function() 
+        if ScriptRunning then
+            ToggleSettings()
+        end
+    end)
     closeBtn.MouseEnter:Connect(function() closeBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 80) end)
     closeBtn.MouseLeave:Connect(function() closeBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 60) end)
     
@@ -541,12 +720,16 @@ local function CreateGUI()
             statuses.fly.Text = FlyEnabled and "ВКЛ" or "ВЫКЛ"
             statuses.fly.TextColor3 = FlyEnabled and Color3.fromRGB(0, 255, 255) or Color3.fromRGB(255, 0, 0)
             
+            statuses.esp.Text = ESPEnabled and "ВКЛ" or "ВЫКЛ"
+            statuses.esp.TextColor3 = ESPEnabled and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
+            
             UpdateIgnoreList()
         end,
         Destroy = function()
             screenGui:Destroy()
         end,
         ToggleSettings = function()
+            if not settingsPanel then return end
             settingsPanel.Visible = not settingsPanel.Visible
             SettingsOpen = settingsPanel.Visible
             if settingsPanel.Visible then
@@ -554,23 +737,23 @@ local function CreateGUI()
             end
         end,
         CloseSettings = function()
-            settingsPanel.Visible = false
-            SettingsOpen = false
+            if settingsPanel then
+                settingsPanel.Visible = false
+                SettingsOpen = false
+            end
         end
     }
 end
 
 local GUI = CreateGUI()
 
--- ===== ФУНКЦИИ =====
-local function IsIgnored(playerName)
-    if not IgnoreListEnabled then return false end
-    for _, name in ipairs(IgnoreList) do
-        if name:lower() == playerName:lower() then
-            return true
-        end
-    end
-    return false
+-- ===== ФУНКЦИИ ДЛЯ ТРИГГЕРБОТА =====
+local function IsAlive(char)
+    if not char then return false end
+    local humanoid = char:FindFirstChild("Humanoid")
+    if not humanoid then return false end
+    if humanoid.Health <= 0 then return false end
+    return true
 end
 
 local function IsVisible(part)
@@ -609,6 +792,7 @@ local function GetTarget()
         
         local char = player.Character
         if not char then continue end
+        if not IsAlive(char) then continue end
         
         local part = char:FindFirstChild("Head")
         if not part then
@@ -616,7 +800,7 @@ local function GetTarget()
         end
         if not part then continue end
         
-        local aimPos = part.Position + Vector3.new(0, 3.0, 0)
+        local aimPos = part.Position + Vector3.new(0, 2.2, 0)
         
         local pos, onScreen = Camera:WorldToViewportPoint(aimPos)
         if not onScreen then continue end
@@ -658,10 +842,11 @@ local function IsOnTarget()
         
         local char = player.Character
         if not char then continue end
+        if not IsAlive(char) then continue end
         
         local head = char:FindFirstChild("Head")
         if head then
-            local aimPos = head.Position + Vector3.new(0, 3.0, 0)
+            local aimPos = head.Position + Vector3.new(0, 2.2, 0)
             local pos, onScreen = Camera:WorldToViewportPoint(aimPos)
             if onScreen then
                 local dist = (Vector2.new(pos.X, pos.Y) - center).Magnitude
@@ -676,7 +861,7 @@ local function IsOnTarget()
         
         local hrp = char:FindFirstChild("HumanoidRootPart")
         if hrp then
-            local aimPos = hrp.Position + Vector3.new(0, 3.0, 0)
+            local aimPos = hrp.Position + Vector3.new(0, 2.2, 0)
             local pos, onScreen = Camera:WorldToViewportPoint(aimPos)
             if onScreen then
                 local dist = (Vector2.new(pos.X, pos.Y) - center).Magnitude
@@ -729,42 +914,51 @@ end
 -- ===== ПЕРЕКЛЮЧЕНИЯ =====
 local function ToggleSettings()
     if not ScriptRunning then return end
-    GUI.ToggleSettings()
+    if GUI and GUI.ToggleSettings then
+        GUI.ToggleSettings()
+    end
 end
 
 local function ToggleTrigger()
     if not ScriptRunning then return end
     Settings.TriggerBot = not Settings.TriggerBot
-    GUI.Update()
+    if GUI and GUI.Update then GUI.Update() end
     print("[XENO] TriggerBot:", Settings.TriggerBot and "ON" or "OFF")
 end
 
 local function ToggleWall()
     if not ScriptRunning then return end
     Settings.WallCheck = not Settings.WallCheck
-    GUI.Update()
+    if GUI and GUI.Update then GUI.Update() end
     print("[XENO] WallCheck:", Settings.WallCheck and "ON" or "OFF")
 end
 
 local function ToggleAim()
     if not ScriptRunning then return end
     Settings.AimAssist = not Settings.AimAssist
-    GUI.Update()
+    if GUI and GUI.Update then GUI.Update() end
     print("[XENO] AimAssist:", Settings.AimAssist and "ON" or "OFF")
 end
 
 local function ToggleIgnoreList()
     if not ScriptRunning then return end
     IgnoreListEnabled = not IgnoreListEnabled
-    GUI.Update()
+    if GUI and GUI.Update then GUI.Update() end
+    if ESPEnabled then CreateESP() end
     print("[XENO] Игнор-лист:", IgnoreListEnabled and "ВКЛЮЧЕН" or "ВЫКЛЮЧЕН")
 end
 
 local function RestartScript()
     print("[XENO] ===== ПЕРЕЗАПУСК =====")
     
-    if FlyEnabled then
-        StopFly()
+    if FlyEnabled then StopFly() end
+    if ESPEnabled then
+        ESPEnabled = false
+        if ESPConnection then
+            ESPConnection:Disconnect()
+            ESPConnection = nil
+        end
+        ClearESP()
     end
     
     local savedSettings = {
@@ -783,8 +977,8 @@ local function RestartScript()
     local savedIgnoreEnabled = IgnoreListEnabled
     
     StopLoop()
-    GUI.CloseSettings()
-    GUI.Destroy()
+    if GUI and GUI.CloseSettings then GUI.CloseSettings() end
+    if GUI and GUI.Destroy then GUI.Destroy() end
     GUI = CreateGUI()
     
     Settings.TriggerBot = savedSettings.TriggerBot
@@ -798,7 +992,7 @@ local function RestartScript()
     IgnoreList = savedIgnoreList
     IgnoreListEnabled = savedIgnoreEnabled
     
-    GUI.Update()
+    if GUI and GUI.Update then GUI.Update() end
     StartLoop()
     
     print("[XENO] ✅ Перезапуск завершен!")
@@ -808,17 +1002,20 @@ local function DeleteScript()
     print("[XENO] Скрипт удален")
     ScriptRunning = false
     
-    if FlyEnabled then
-        StopFly()
+    if FlyEnabled then StopFly() end
+    if ESPEnabled then
+        if ESPConnection then
+            ESPConnection:Disconnect()
+            ESPConnection = nil
+        end
+        ClearESP()
     end
     
     StopLoop()
-    GUI.Destroy()
+    if GUI and GUI.Destroy then GUI.Destroy() end
 end
 
--- ===== КЛАВИШИ (ДВА СПОСОБА ДЛЯ НАДЕЖНОСТИ) =====
-
--- Способ 1: UserInputService
+-- ===== КЛАВИШИ =====
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end
     if not ScriptRunning then return end
@@ -826,58 +1023,76 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
     
     local key = input.KeyCode
     
-    if key == Enum.KeyCode.F1 then ToggleTrigger() 
-    elseif key == Enum.KeyCode.F2 then ToggleWall()
-    elseif key == Enum.KeyCode.F3 then ToggleAim()
-    elseif key == Enum.KeyCode.F4 then ToggleFly()
-    elseif key == Enum.KeyCode.F5 then ToggleIgnoreList()
-    elseif key == Enum.KeyCode.Insert then ToggleSettings()
-    elseif key == Enum.KeyCode.Delete then DeleteScript()
+    if key == Enum.KeyCode.F1 then 
+        ToggleTrigger()
+    elseif key == Enum.KeyCode.F2 then 
+        ToggleESP()
+    elseif key == Enum.KeyCode.F3 then 
+        ToggleAim()
+    elseif key == Enum.KeyCode.F4 then 
+        ToggleFly()
+    elseif key == Enum.KeyCode.F5 then 
+        ToggleIgnoreList()
+    elseif key == Enum.KeyCode.F6 then 
+        ToggleWall()
+    elseif key == Enum.KeyCode.Insert then 
+        ToggleSettings()
+    elseif key == Enum.KeyCode.Delete then 
+        DeleteScript()
     end
 end)
 
--- Способ 2: ContextActionService (резервный)
+-- ContextActionService (резервный)
 local function OnAction(actionName, inputState, inputObject)
     if inputState ~= Enum.UserInputState.Begin then return end
     if not ScriptRunning then return end
     
-    if actionName == "TriggerBot" then ToggleTrigger()
-    elseif actionName == "WallCheck" then ToggleWall()
-    elseif actionName == "AimAssist" then ToggleAim()
-    elseif actionName == "Fly" then ToggleFly()
-    elseif actionName == "IgnoreList" then ToggleIgnoreList()
-    elseif actionName == "Settings" then ToggleSettings()
-    elseif actionName == "Delete" then DeleteScript()
+    if actionName == "TriggerBot" then 
+        ToggleTrigger()
+    elseif actionName == "ESP" then 
+        ToggleESP()
+    elseif actionName == "AimAssist" then 
+        ToggleAim()
+    elseif actionName == "Fly" then 
+        ToggleFly()
+    elseif actionName == "IgnoreList" then 
+        ToggleIgnoreList()
+    elseif actionName == "WallCheck" then 
+        ToggleWall()
+    elseif actionName == "Settings" then 
+        ToggleSettings()
+    elseif actionName == "Delete" then 
+        DeleteScript()
     end
 end
 
 ContextActionService:BindAction("TriggerBot", OnAction, false, Enum.KeyCode.F1)
-ContextActionService:BindAction("WallCheck", OnAction, false, Enum.KeyCode.F2)
+ContextActionService:BindAction("ESP", OnAction, false, Enum.KeyCode.F2)
 ContextActionService:BindAction("AimAssist", OnAction, false, Enum.KeyCode.F3)
 ContextActionService:BindAction("Fly", OnAction, false, Enum.KeyCode.F4)
 ContextActionService:BindAction("IgnoreList", OnAction, false, Enum.KeyCode.F5)
+ContextActionService:BindAction("WallCheck", OnAction, false, Enum.KeyCode.F6)
 ContextActionService:BindAction("Settings", OnAction, false, Enum.KeyCode.Insert)
 ContextActionService:BindAction("Delete", OnAction, false, Enum.KeyCode.Delete)
 
--- ===== ОБНОВЛЕНИЕ GUI ПО ЦИКЛУ =====
-local function UpdateLoop()
-    if ScriptRunning then
+-- ===== ОБНОВЛЕНИЕ GUI =====
+RunService.Heartbeat:Connect(function()
+    if ScriptRunning and GUI and GUI.Update then
         GUI.Update()
     end
-end
-
-RunService.Heartbeat:Connect(UpdateLoop)
+end)
 
 -- ===== СТАРТ =====
 StartLoop()
 
 print("====================================")
-print("🔫 TRIGGERBOT ДЛЯ XENO (FIXED)")
+print("🔫 TRIGGERBOT ДЛЯ XENO")
 print("📢 F1 - Триггер бот")
-print("📢 F2 - Wall Check")
+print("📢 F2 - ESP (ВХ)")
 print("📢 F3 - Доводка")
 print("📢 F4 - Полет (скорость 40)")
 print("📢 F5 - Игнор-лист")
+print("📢 F6 - WallCheck")
 print("📢 Insert - Настройки")
 print("📢 Delete - Удалить")
 print("====================================")
