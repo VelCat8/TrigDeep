@@ -1,23 +1,19 @@
 -- =====================================================
--- 🔫 TRIGGERBOT ДЛЯ XENO (С КРАСИВЫМ МЕНЮ)
--- =====================================================
--- Версия: 2.1 (Fixed buttons)
+-- 🔫 TRIGGERBOT ДЛЯ XENO (С TEAM CHECK + AIM DISTANCE)
 -- =====================================================
 
--- === ПОДКЛЮЧЕНИЕ СЕРВИСОВ ===
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 local ContextActionService = game:GetService("ContextActionService")
-local TweenService = game:GetService("TweenService")
 
 local LocalPlayer = Players.LocalPlayer
 local Camera = Workspace.CurrentCamera
 local Mouse = LocalPlayer:GetMouse()
 
 -- =====================================================
--- === НАСТРОЙКИ ПО УМОЛЧАНИЮ ===
+-- === НАСТРОЙКИ ===
 -- =====================================================
 local Settings = {
     TriggerBot = false,
@@ -27,6 +23,8 @@ local Settings = {
     FOV = 400,
     TriggerRadius = 60,
     ShotDelay = 0.05,
+    TeamCheck = true,
+    MaxAimDistance = 300, -- Максимальная дистанция для доводки (стадов)
 }
 
 -- =====================================================
@@ -47,7 +45,7 @@ local FlyConnection = nil
 local NoclipConnection = nil
 
 -- =====================================================
--- === ESP (ВХ) ===
+-- === ESP ===
 -- =====================================================
 local ESPEnabled = false
 local ESPConnection = nil
@@ -56,7 +54,7 @@ local ESP_MAX_DISTANCE = 300
 local LastESPUpdate = 0
 
 -- =====================================================
--- === ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ===
+-- === ГЛОБАЛЬНЫЕ ===
 -- =====================================================
 local ScriptRunning = true
 local MainConnection = nil
@@ -64,21 +62,22 @@ local SettingsOpen = false
 local SettingsPanel = nil
 local GUI = nil
 
--- =====================================================
--- === ВПЕРЕД ОБЪЯВЛЯЕМ ВСЕ ФУНКЦИИ (чтобы не было ошибок) ===
--- =====================================================
-local ToggleTrigger
-local ToggleWall
-local ToggleAim
-local ToggleIgnoreList
-local ToggleFly
-local ToggleESP
-local ToggleSettings
-local DeleteScript
-local RestartScript
+local ToggleTrigger, ToggleWall, ToggleAim, ToggleIgnoreList
+local ToggleFly, ToggleESP, ToggleSettings, DeleteScript, RestartScript
 
 -- =====================================================
--- === ФУНКЦИИ ДЛЯ РАБОТЫ С ИГНОР-ЛИСТОМ ===
+-- === ПРОВЕРКА СВОИХ ===
+-- =====================================================
+local function IsTeammate(player)
+    if not Settings.TeamCheck then return false end
+    if not player then return false end
+    if not LocalPlayer.Team then return false end
+    if player.Team == LocalPlayer.Team then return true end
+    return false
+end
+
+-- =====================================================
+-- === ИГНОР-ЛИСТ ===
 -- =====================================================
 local function IsIgnored(playerName)
     if not IgnoreListEnabled then return false end
@@ -90,16 +89,31 @@ local function IsIgnored(playerName)
     return false
 end
 
--- =====================================================
--- === ФУНКЦИИ ESP ===
--- =====================================================
+-- Проверка - можно ли атаковать (не я, не игнор, не свой)
+local function CanAttack(player)
+    if player == LocalPlayer then return false end
+    if IsIgnored(player.Name) then return false end
+    if IsTeammate(player) then return false end
+    return true
+end
 
+-- Проверка дистанции до игрока
+local function IsWithinDistance(hrp)
+    if not LocalPlayer.Character then return false end
+    local myHrp = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not myHrp then return false end
+    
+    local dist = (myHrp.Position - hrp.Position).Magnitude
+    return dist <= Settings.MaxAimDistance
+end
+
+-- =====================================================
+-- === ESP ===
+-- =====================================================
 local function ClearESP()
     for _, obj in ipairs(ESPObjects) do
         pcall(function() 
-            if obj and obj.Parent then
-                obj:Destroy() 
-            end
+            if obj and obj.Parent then obj:Destroy() end
         end)
     end
     ESPObjects = {}
@@ -107,7 +121,6 @@ end
 
 local function CreateESP()
     ClearESP()
-    
     if not ESPEnabled then return end
     if not LocalPlayer.Character then return end
     
@@ -131,18 +144,21 @@ local function CreateESP()
         local humanoid = char:FindFirstChild("Humanoid")
         if not humanoid or humanoid.Health <= 0 then continue end
         
-        -- РАМКА
+        local boxColor = Color3.fromRGB(255, 0, 0)
+        if IsTeammate(player) then
+            boxColor = Color3.fromRGB(0, 255, 0)
+        end
+        
         local box = Instance.new("BoxHandleAdornment")
         box.Size = Vector3.new(4.5, 7, 2.5)
         box.Adornee = hrp
-        box.Color3 = Color3.fromRGB(255, 0, 0)
+        box.Color3 = boxColor
         box.Transparency = 0.3
         box.ZIndex = 0
         box.AlwaysOnTop = true
         box.Parent = hrp
         table.insert(ESPObjects, box)
         
-        -- ПОЛОСКА ХП
         local head = char:FindFirstChild("Head")
         local hpBar = Instance.new("BillboardGui")
         hpBar.Size = UDim2.new(0, 60, 0, 6)
@@ -160,16 +176,15 @@ local function CreateESP()
         hpBg.Parent = hpBar
         
         local hpFill = Instance.new("Frame")
-        hpFill.Name = "HPFill"
         hpFill.Size = UDim2.new(1, 0, 1, 0)
         hpFill.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
         hpFill.BorderSizePixel = 0
         hpFill.Parent = hpBg
         
         local function UpdateHP()
-            local humanoid = char:FindFirstChild("Humanoid")
-            if humanoid then
-                local health = humanoid.Health / humanoid.MaxHealth
+            local h = char:FindFirstChild("Humanoid")
+            if h then
+                local health = h.Health / h.MaxHealth
                 hpFill.Size = UDim2.new(health, 0, 1, 0)
                 if health > 0.6 then
                     hpFill.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
@@ -188,7 +203,6 @@ local function CreateESP()
                 task.wait(0.1)
             end
         end)
-        
         UpdateHP()
     end
 end
@@ -217,9 +231,7 @@ local function CheckNewPlayers()
                 local char = parent.Parent
                 if char and char:IsA("Model") then
                     local player = Players:GetPlayerFromCharacter(char)
-                    if player then
-                        existingPlayers[player.Name] = true
-                    end
+                    if player then existingPlayers[player.Name] = true end
                 end
             end
         end
@@ -234,9 +246,8 @@ local function CheckNewPlayers()
 end
 
 -- =====================================================
--- === ФУНКЦИИ ПОЛЕТА ===
+-- === ПОЛЕТ ===
 -- =====================================================
-
 local function StartFly()
     if FlyEnabled then return end
     if not LocalPlayer.Character then return end
@@ -246,9 +257,7 @@ local function StartFly()
     if not hrp then return end
     
     local humanoid = char:FindFirstChild("Humanoid")
-    if humanoid then
-        humanoid.PlatformStand = true
-    end
+    if humanoid then humanoid.PlatformStand = true end
     
     FlyEnabled = true
     print("[XENO] 🚀 Полет включен")
@@ -267,69 +276,40 @@ local function StartFly()
         local camLook = Camera.CFrame.LookVector * Vector3.new(1, 0, 1)
         local camRight = Camera.CFrame.RightVector
         
-        if UserInputService:IsKeyDown(Enum.KeyCode.W) then
-            moveVector = moveVector + camLook
-        end
-        if UserInputService:IsKeyDown(Enum.KeyCode.S) then
-            moveVector = moveVector - camLook
-        end
-        if UserInputService:IsKeyDown(Enum.KeyCode.A) then
-            moveVector = moveVector - camRight
-        end
-        if UserInputService:IsKeyDown(Enum.KeyCode.D) then
-            moveVector = moveVector + camRight
-        end
-        if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
-            moveVector = moveVector + Vector3.new(0, 1, 0)
-        end
-        if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then
-            moveVector = moveVector - Vector3.new(0, 1, 0)
-        end
+        if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveVector = moveVector + camLook end
+        if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveVector = moveVector - camLook end
+        if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveVector = moveVector - camRight end
+        if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveVector = moveVector + camRight end
+        if UserInputService:IsKeyDown(Enum.KeyCode.Space) then moveVector = moveVector + Vector3.new(0, 1, 0) end
+        if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then moveVector = moveVector - Vector3.new(0, 1, 0) end
         
         if moveVector.Magnitude > 0 then
             moveVector = moveVector.Unit * FlySpeed
         end
-        
         hrp.CFrame = hrp.CFrame + moveVector
     end)
     
     NoclipConnection = RunService.Heartbeat:Connect(function()
         if not FlyEnabled or not LocalPlayer.Character then return end
-        
         for _, part in ipairs(LocalPlayer.Character:GetDescendants()) do
-            if part:IsA("BasePart") then
-                part.CanCollide = false
-            end
+            if part:IsA("BasePart") then part.CanCollide = false end
         end
     end)
 end
 
 local function StopFly()
     if not FlyEnabled then return end
-    
     FlyEnabled = false
     
-    if FlyConnection then
-        FlyConnection:Disconnect()
-        FlyConnection = nil
-    end
-    
-    if NoclipConnection then
-        NoclipConnection:Disconnect()
-        NoclipConnection = nil
-    end
+    if FlyConnection then FlyConnection:Disconnect(); FlyConnection = nil end
+    if NoclipConnection then NoclipConnection:Disconnect(); NoclipConnection = nil end
     
     local char = LocalPlayer.Character
     if char then
         local humanoid = char:FindFirstChild("Humanoid")
-        if humanoid then
-            humanoid.PlatformStand = false
-        end
-        
+        if humanoid then humanoid.PlatformStand = false end
         for _, part in ipairs(char:GetDescendants()) do
-            if part:IsA("BasePart") then
-                part.CanCollide = true
-            end
+            if part:IsA("BasePart") then part.CanCollide = true end
         end
     end
     
@@ -338,9 +318,8 @@ local function StopFly()
 end
 
 -- =====================================================
--- === ФУНКЦИИ ДЛЯ ТРИГГЕРБОТА ===
+-- === ТРИГГЕРБОТ ===
 -- =====================================================
-
 local function IsAlive(char)
     if not char then return false end
     local humanoid = char:FindFirstChild("Humanoid")
@@ -351,7 +330,6 @@ end
 
 local function IsVisible(part)
     if not part or not LocalPlayer.Character then return false end
-    
     local origin = LocalPlayer.Character:FindFirstChild("Head")
     if not origin then return false end
     
@@ -368,7 +346,6 @@ local function IsVisible(part)
         local player = Players:GetPlayerFromCharacter(hit.Parent)
         if player then return true end
     end
-    
     return false
 end
 
@@ -380,8 +357,7 @@ local function GetTarget()
     local bestDist = math.huge
     
     for _, player in ipairs(Players:GetPlayers()) do
-        if player == LocalPlayer then continue end
-        if IsIgnored(player.Name) then continue end
+        if not CanAttack(player) then continue end
         
         local char = player.Character
         if not char then continue end
@@ -393,13 +369,14 @@ local function GetTarget()
         end
         if not part then continue end
         
-        local aimPos = part.Position + Vector3.new(0, 2.2, 0)
+        -- === ПРОВЕРКА ДИСТАНЦИИ (не более MaxAimDistance) ===
+        if not IsWithinDistance(part) then continue end
         
+        local aimPos = part.Position + Vector3.new(0, 2.2, 0)
         local pos, onScreen = Camera:WorldToViewportPoint(aimPos)
         if not onScreen then continue end
         
         local dist = (Vector2.new(pos.X, pos.Y) - center).Magnitude
-        
         if dist > Settings.FOV then continue end
         if Settings.WallCheck and not IsVisible(part) then continue end
         
@@ -408,30 +385,25 @@ local function GetTarget()
             best = {Player = player, Part = part, ScreenPos = Vector2.new(pos.X, pos.Y), Dist = dist}
         end
     end
-    
     return best
 end
 
 local function DoAimAssist()
     if not Settings.TriggerBot or not Settings.AimAssist then return end
-    
     local target = GetTarget()
     if not target then return end
     
     local dx = target.ScreenPos.X - Mouse.X
     local dy = target.ScreenPos.Y - Mouse.Y
-    
     mousemoverel(dx * Settings.Smoothness, dy * Settings.Smoothness * 1.2)
 end
 
 local function IsOnTarget()
     if not LocalPlayer.Character then return false end
-    
     local center = Vector2.new(Mouse.X, Mouse.Y)
     
     for _, player in ipairs(Players:GetPlayers()) do
-        if player == LocalPlayer then continue end
-        if IsIgnored(player.Name) then continue end
+        if not CanAttack(player) then continue end
         
         local char = player.Character
         if not char then continue end
@@ -439,35 +411,38 @@ local function IsOnTarget()
         
         local head = char:FindFirstChild("Head")
         if head then
-            local aimPos = head.Position + Vector3.new(0, 2.2, 0)
-            local pos, onScreen = Camera:WorldToViewportPoint(aimPos)
-            if onScreen then
-                local dist = (Vector2.new(pos.X, pos.Y) - center).Magnitude
-                if dist < Settings.TriggerRadius then
-                    if Settings.WallCheck and not IsVisible(head) then
-                        return false
+            -- === ПРОВЕРКА ДИСТАНЦИИ ===
+            if IsWithinDistance(head) then
+                local aimPos = head.Position + Vector3.new(0, 2.2, 0)
+                local pos, onScreen = Camera:WorldToViewportPoint(aimPos)
+                if onScreen then
+                    local dist = (Vector2.new(pos.X, pos.Y) - center).Magnitude
+                    if dist < Settings.TriggerRadius then
+                        if not (Settings.WallCheck and not IsVisible(head)) then
+                            return true
+                        end
                     end
-                    return true
                 end
             end
         end
         
         local hrp = char:FindFirstChild("HumanoidRootPart")
         if hrp then
-            local aimPos = hrp.Position + Vector3.new(0, 2.2, 0)
-            local pos, onScreen = Camera:WorldToViewportPoint(aimPos)
-            if onScreen then
-                local dist = (Vector2.new(pos.X, pos.Y) - center).Magnitude
-                if dist < Settings.TriggerRadius + 30 then
-                    if Settings.WallCheck and not IsVisible(hrp) then
-                        return false
+            -- === ПРОВЕРКА ДИСТАНЦИИ ===
+            if IsWithinDistance(hrp) then
+                local aimPos = hrp.Position + Vector3.new(0, 2.2, 0)
+                local pos, onScreen = Camera:WorldToViewportPoint(aimPos)
+                if onScreen then
+                    local dist = (Vector2.new(pos.X, pos.Y) - center).Magnitude
+                    if dist < Settings.TriggerRadius + 30 then
+                        if not (Settings.WallCheck and not IsVisible(hrp)) then
+                            return true
+                        end
                     end
-                    return true
                 end
             end
         end
     end
-    
     return false
 end
 
@@ -475,41 +450,30 @@ local LastShot = 0
 
 local function MainLoop()
     if not Settings.TriggerBot then return end
-    
     DoAimAssist()
-    
     if IsOnTarget() and tick() - LastShot > Settings.ShotDelay then
-        pcall(function()
-            mouse1click()
-        end)
+        pcall(function() mouse1click() end)
         LastShot = tick()
     end
 end
 
 -- =====================================================
--- === ЗАПУСК/ОСТАНОВКА ЦИКЛОВ ===
+-- === ЗАПУСК/ОСТАНОВКА ===
 -- =====================================================
 local function StartLoop()
-    if MainConnection then
-        MainConnection:Disconnect()
-        MainConnection = nil
-    end
+    if MainConnection then MainConnection:Disconnect(); MainConnection = nil end
     MainConnection = RunService.RenderStepped:Connect(function()
         pcall(MainLoop)
     end)
 end
 
 local function StopLoop()
-    if MainConnection then
-        MainConnection:Disconnect()
-        MainConnection = nil
-    end
+    if MainConnection then MainConnection:Disconnect(); MainConnection = nil end
 end
 
 -- =====================================================
 -- === ПАНЕЛЬ НАСТРОЕК ===
 -- =====================================================
-
 local function CreateSettingsPanel()
     pcall(function()
         if LocalPlayer.PlayerGui:FindFirstChild("SettingsPanel") then
@@ -521,25 +485,20 @@ local function CreateSettingsPanel()
     ScreenGui.Name = "SettingsPanel"
     ScreenGui.Parent = LocalPlayer.PlayerGui
     ScreenGui.ResetOnSpawn = false
-    ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
     ScreenGui.DisplayOrder = 1000
     
     local MainFrame = Instance.new("Frame")
-    MainFrame.Size = UDim2.new(0, 280, 0, 250)
+    MainFrame.Size = UDim2.new(0, 280, 0, 340)
     MainFrame.Position = UDim2.new(0, 260, 0, 40)
     MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
     MainFrame.BorderColor3 = Color3.fromRGB(60, 60, 60)
     MainFrame.BorderSizePixel = 1
     MainFrame.Visible = false
     MainFrame.Parent = ScreenGui
-    
-    local MainCorner = Instance.new("UICorner")
-    MainCorner.CornerRadius = UDim.new(0, 10)
-    MainCorner.Parent = MainFrame
+    Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 10)
     
     local Title = Instance.new("TextLabel")
     Title.Size = UDim2.new(1, 0, 0, 30)
-    Title.Position = UDim2.new(0, 0, 0, 0)
     Title.BackgroundTransparency = 1
     Title.Text = "⚙️ НАСТРОЙКИ"
     Title.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -586,10 +545,7 @@ local function CreateSettingsPanel()
         MinusBtn.TextSize = 16
         MinusBtn.Font = Enum.Font.GothamBold
         MinusBtn.Parent = Container
-        
-        local MinusCorner = Instance.new("UICorner")
-        MinusCorner.CornerRadius = UDim.new(0, 4)
-        MinusCorner.Parent = MinusBtn
+        Instance.new("UICorner", MinusBtn).CornerRadius = UDim.new(0, 4)
         
         local PlusBtn = Instance.new("TextButton")
         PlusBtn.Size = UDim2.new(0, 22, 1, 0)
@@ -600,10 +556,7 @@ local function CreateSettingsPanel()
         PlusBtn.TextSize = 16
         PlusBtn.Font = Enum.Font.GothamBold
         PlusBtn.Parent = Container
-        
-        local PlusCorner = Instance.new("UICorner")
-        PlusCorner.CornerRadius = UDim.new(0, 4)
-        PlusCorner.Parent = PlusBtn
+        Instance.new("UICorner", PlusBtn).CornerRadius = UDim.new(0, 4)
         
         local function UpdateValue(newVal)
             newVal = math.max(minVal, math.min(maxVal, newVal))
@@ -614,7 +567,6 @@ local function CreateSettingsPanel()
         MinusBtn.MouseButton1Click:Connect(function()
             UpdateValue(getValue() - (maxVal - minVal) / 20)
         end)
-        
         PlusBtn.MouseButton1Click:Connect(function()
             UpdateValue(getValue() + (maxVal - minVal) / 20)
         end)
@@ -623,53 +575,86 @@ local function CreateSettingsPanel()
         MinusBtn.MouseLeave:Connect(function() MinusBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 60) end)
         PlusBtn.MouseEnter:Connect(function() PlusBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 80) end)
         PlusBtn.MouseLeave:Connect(function() PlusBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 60) end)
-        
-        return ValueLabel
     end
     
     CreateSlider(35, "Плавность", 0.05, 0.95, 
         function() return Settings.Smoothness end,
-        function(v) Settings.Smoothness = v end,
-        "%.2f"
-    )
+        function(v) Settings.Smoothness = v end, "%.2f")
     
     CreateSlider(75, "Радиус доводки", 50, 500,
         function() return Settings.FOV end,
-        function(v) Settings.FOV = v end,
-        "%.0f"
-    )
+        function(v) Settings.FOV = v end, "%.0f")
     
     CreateSlider(115, "Радиус триггера", 20, 150,
         function() return Settings.TriggerRadius end,
-        function(v) Settings.TriggerRadius = v end,
-        "%.0f"
-    )
+        function(v) Settings.TriggerRadius = v end, "%.0f")
     
     CreateSlider(155, "Задержка (сек)", 0.01, 0.50,
         function() return Settings.ShotDelay end,
-        function(v) Settings.ShotDelay = v end,
-        "%.2f"
-    )
+        function(v) Settings.ShotDelay = v end, "%.2f")
+    
+    -- === НОВЫЙ СЛАЙДЕР: Макс. дистанция аима ===
+    CreateSlider(195, "Макс. дистанция", 50, 1000,
+        function() return Settings.MaxAimDistance end,
+        function(v) Settings.MaxAimDistance = v end, "%.0f")
+    
+    -- Кнопка TeamCheck
+    local TeamCheckBtn = Instance.new("TextButton")
+    TeamCheckBtn.Size = UDim2.new(1, -20, 0, 30)
+    TeamCheckBtn.Position = UDim2.new(0, 10, 0, 240)
+    TeamCheckBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+    TeamCheckBtn.Text = ""
+    TeamCheckBtn.Parent = MainFrame
+    Instance.new("UICorner", TeamCheckBtn).CornerRadius = UDim.new(0, 6)
+    
+    local TeamLabel = Instance.new("TextLabel")
+    TeamLabel.Size = UDim2.new(0.7, 0, 1, 0)
+    TeamLabel.Position = UDim2.new(0, 10, 0, 0)
+    TeamLabel.BackgroundTransparency = 1
+    TeamLabel.Text = "Не бить своих"
+    TeamLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    TeamLabel.TextSize = 13
+    TeamLabel.Font = Enum.Font.GothamBold
+    TeamLabel.TextXAlignment = Enum.TextXAlignment.Left
+    TeamLabel.Parent = TeamCheckBtn
+    
+    local TeamIndBg = Instance.new("Frame")
+    TeamIndBg.Size = UDim2.new(0, 20, 0, 20)
+    TeamIndBg.Position = UDim2.new(1, -30, 0, 5)
+    TeamIndBg.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    TeamIndBg.Parent = TeamCheckBtn
+    Instance.new("UICorner", TeamIndBg).CornerRadius = UDim.new(1, 0)
+    
+    local TeamInd = Instance.new("Frame")
+    TeamInd.Size = UDim2.new(0, 14, 0, 14)
+    TeamInd.Position = UDim2.new(0, 3, 0, 3)
+    TeamInd.BackgroundColor3 = Settings.TeamCheck and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
+    TeamInd.Parent = TeamIndBg
+    Instance.new("UICorner", TeamInd).CornerRadius = UDim.new(1, 0)
+    
+    TeamCheckBtn.MouseButton1Click:Connect(function()
+        Settings.TeamCheck = not Settings.TeamCheck
+        TeamInd.BackgroundColor3 = Settings.TeamCheck and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
+        print("[XENO] TeamCheck:", Settings.TeamCheck and "ON" or "OFF")
+    end)
+    TeamCheckBtn.MouseEnter:Connect(function() TeamCheckBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 50) end)
+    TeamCheckBtn.MouseLeave:Connect(function() TeamCheckBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 35) end)
     
     local CloseBtn = Instance.new("TextButton")
     CloseBtn.Size = UDim2.new(0.3, 0, 0, 30)
-    CloseBtn.Position = UDim2.new(0.35, 0, 0, 200)
+    CloseBtn.Position = UDim2.new(0.35, 0, 0, 290)
     CloseBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
     CloseBtn.Text = "ЗАКРЫТЬ"
     CloseBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
     CloseBtn.TextSize = 13
     CloseBtn.Font = Enum.Font.GothamBold
     CloseBtn.Parent = MainFrame
-    
-    local CloseCorner = Instance.new("UICorner")
-    CloseCorner.CornerRadius = UDim.new(0, 6)
-    CloseCorner.Parent = CloseBtn
+    Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 6)
     
     CloseBtn.MouseButton1Click:Connect(function()
         MainFrame.Visible = false
         SettingsOpen = false
     end)
-    
     CloseBtn.MouseEnter:Connect(function() CloseBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 80) end)
     CloseBtn.MouseLeave:Connect(function() CloseBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 60) end)
     
@@ -681,9 +666,6 @@ local function CreateSettingsPanel()
         Close = function()
             MainFrame.Visible = false
             SettingsOpen = false
-        end,
-        IsOpen = function()
-            return MainFrame.Visible
         end
     }
 end
@@ -691,7 +673,6 @@ end
 -- =====================================================
 -- === ГЛАВНОЕ МЕНЮ ===
 -- =====================================================
-
 local function CreateMainMenu()
     pcall(function()
         if LocalPlayer.PlayerGui:FindFirstChild("CustomMenu") then
@@ -703,7 +684,6 @@ local function CreateMainMenu()
     ScreenGui.Name = "CustomMenu"
     ScreenGui.Parent = LocalPlayer.PlayerGui
     ScreenGui.ResetOnSpawn = false
-    ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
     ScreenGui.DisplayOrder = 999
     
     local MainFrame = Instance.new("Frame")
@@ -713,14 +693,10 @@ local function CreateMainMenu()
     MainFrame.BorderColor3 = Color3.fromRGB(60, 60, 60)
     MainFrame.BorderSizePixel = 1
     MainFrame.Parent = ScreenGui
-    
-    local MainCorner = Instance.new("UICorner")
-    MainCorner.CornerRadius = UDim.new(0, 10)
-    MainCorner.Parent = MainFrame
+    Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 10)
     
     local Title = Instance.new("TextLabel")
     Title.Size = UDim2.new(1, 0, 0, 35)
-    Title.Position = UDim2.new(0, 0, 0, 0)
     Title.BackgroundTransparency = 1
     Title.Text = "🔫 TRIGGERBOT"
     Title.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -740,10 +716,7 @@ local function CreateMainMenu()
         Button.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
         Button.Text = ""
         Button.Parent = Container
-        
-        local ButtonCorner = Instance.new("UICorner")
-        ButtonCorner.CornerRadius = UDim.new(0, 6)
-        ButtonCorner.Parent = Button
+        Instance.new("UICorner", Button).CornerRadius = UDim.new(0, 6)
         
         local Label = Instance.new("TextLabel")
         Label.Size = UDim2.new(0.7, 0, 1, 0)
@@ -756,36 +729,22 @@ local function CreateMainMenu()
         Label.TextXAlignment = Enum.TextXAlignment.Left
         Label.Parent = Container
         
-        -- Черный фон для индикатора
         local IndicatorBg = Instance.new("Frame")
         IndicatorBg.Size = UDim2.new(0, 20, 0, 20)
         IndicatorBg.Position = UDim2.new(1, -30, 0, 10)
         IndicatorBg.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-        IndicatorBg.BorderSizePixel = 0
         IndicatorBg.Parent = Container
-        
-        local IndicatorBgCorner = Instance.new("UICorner")
-        IndicatorBgCorner.CornerRadius = UDim.new(1, 0)
-        IndicatorBgCorner.Parent = IndicatorBg
+        Instance.new("UICorner", IndicatorBg).CornerRadius = UDim.new(1, 0)
         
         local Indicator = Instance.new("Frame")
         Indicator.Size = UDim2.new(0, 14, 0, 14)
         Indicator.Position = UDim2.new(0, 3, 0, 3)
         Indicator.BackgroundColor3 = getState and getState() and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
-        Indicator.BorderSizePixel = 0
         Indicator.Parent = IndicatorBg
+        Instance.new("UICorner", Indicator).CornerRadius = UDim.new(1, 0)
         
-        local IndicatorCorner = Instance.new("UICorner")
-        IndicatorCorner.CornerRadius = UDim.new(1, 0)
-        IndicatorCorner.Parent = Indicator
-        
-        Button.MouseEnter:Connect(function()
-            Button.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-        end)
-        Button.MouseLeave:Connect(function()
-            Button.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
-        end)
-        
+        Button.MouseEnter:Connect(function() Button.BackgroundColor3 = Color3.fromRGB(50, 50, 50) end)
+        Button.MouseLeave:Connect(function() Button.BackgroundColor3 = Color3.fromRGB(35, 35, 35) end)
         Button.MouseButton1Click:Connect(function()
             if toggleFunc then
                 toggleFunc()
@@ -797,34 +756,17 @@ local function CreateMainMenu()
     end
     
     local btn1, ind1 = CreateMenuButton(40, "TRIGGERBOT", "F1", 
-        function() return Settings.TriggerBot end,
-        function() ToggleTrigger() end
-    )
-    
+        function() return Settings.TriggerBot end, function() ToggleTrigger() end)
     local btn2, ind2 = CreateMenuButton(85, "ESP", "F2",
-        function() return ESPEnabled end,
-        function() ToggleESP() end
-    )
-    
+        function() return ESPEnabled end, function() ToggleESP() end)
     local btn3, ind3 = CreateMenuButton(130, "ДОВОДКА", "F3",
-        function() return Settings.AimAssist end,
-        function() ToggleAim() end
-    )
-    
+        function() return Settings.AimAssist end, function() ToggleAim() end)
     local btn4, ind4 = CreateMenuButton(175, "ИГНОР-ЛИСТ", "F4",
-        function() return IgnoreListEnabled and #IgnoreList > 0 end,
-        function() ToggleIgnoreList() end
-    )
-    
+        function() return IgnoreListEnabled and #IgnoreList > 0 end, function() ToggleIgnoreList() end)
     local btn5, ind5 = CreateMenuButton(220, "ПОЛЕТ", "F5",
-        function() return FlyEnabled end,
-        function() ToggleFly() end
-    )
-    
+        function() return FlyEnabled end, function() ToggleFly() end)
     local btn6, ind6 = CreateMenuButton(265, "WALLCHECK", "F6",
-        function() return Settings.WallCheck end,
-        function() ToggleWall() end
-    )
+        function() return Settings.WallCheck end, function() ToggleWall() end)
     
     local SettingsBtn = Instance.new("TextButton")
     SettingsBtn.Size = UDim2.new(0, 105, 0, 30)
@@ -835,18 +777,12 @@ local function CreateMainMenu()
     SettingsBtn.TextSize = 12
     SettingsBtn.Text = "⚙️ НАСТРОЙКИ"
     SettingsBtn.Parent = MainFrame
-    
-    local SettingsCorner = Instance.new("UICorner")
-    SettingsCorner.CornerRadius = UDim.new(0, 6)
-    SettingsCorner.Parent = SettingsBtn
+    Instance.new("UICorner", SettingsBtn).CornerRadius = UDim.new(0, 6)
     
     SettingsBtn.MouseEnter:Connect(function() SettingsBtn.BackgroundColor3 = Color3.fromRGB(70, 70, 90) end)
     SettingsBtn.MouseLeave:Connect(function() SettingsBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 70) end)
-    
     SettingsBtn.MouseButton1Click:Connect(function()
-        if SettingsPanel then
-            SettingsPanel.Toggle()
-        end
+        if SettingsPanel then SettingsPanel.Toggle() end
     end)
     
     local DeleteBtn = Instance.new("TextButton")
@@ -858,17 +794,11 @@ local function CreateMainMenu()
     DeleteBtn.TextSize = 12
     DeleteBtn.Text = "🗑 УДАЛИТЬ"
     DeleteBtn.Parent = MainFrame
-    
-    local DeleteCorner = Instance.new("UICorner")
-    DeleteCorner.CornerRadius = UDim.new(0, 6)
-    DeleteCorner.Parent = DeleteBtn
+    Instance.new("UICorner", DeleteBtn).CornerRadius = UDim.new(0, 6)
     
     DeleteBtn.MouseEnter:Connect(function() DeleteBtn.BackgroundColor3 = Color3.fromRGB(90, 40, 40) end)
     DeleteBtn.MouseLeave:Connect(function() DeleteBtn.BackgroundColor3 = Color3.fromRGB(70, 30, 30) end)
-    
-    DeleteBtn.MouseButton1Click:Connect(function()
-        DeleteScript()
-    end)
+    DeleteBtn.MouseButton1Click:Connect(function() DeleteScript() end)
     
     local function UpdateIndicators()
         ind1.BackgroundColor3 = Settings.TriggerBot and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
@@ -880,24 +810,17 @@ local function CreateMainMenu()
     end
     
     return {
-        Update = function()
-            UpdateIndicators()
-        end,
-        Destroy = function()
-            ScreenGui:Destroy()
-        end
+        Update = function() UpdateIndicators() end,
+        Destroy = function() ScreenGui:Destroy() end
     }
 end
 
 -- =====================================================
--- === РЕАЛИЗАЦИЯ ФУНКЦИЙ ПЕРЕКЛЮЧЕНИЯ ===
+-- === ФУНКЦИИ ПЕРЕКЛЮЧЕНИЯ ===
 -- =====================================================
-
 function ToggleSettings()
     if not ScriptRunning then return end
-    if SettingsPanel then
-        SettingsPanel.Toggle()
-    end
+    if SettingsPanel then SettingsPanel.Toggle() end
 end
 
 function ToggleTrigger()
@@ -926,41 +849,31 @@ function ToggleIgnoreList()
     IgnoreListEnabled = not IgnoreListEnabled
     if GUI and GUI.Update then GUI.Update() end
     if ESPEnabled then CreateESP() end
-    print("[XENO] Игнор-лист:", IgnoreListEnabled and "ВКЛЮЧЕН" or "ВЫКЛЮЧЕН")
+    print("[XENO] Игнор-лист:", IgnoreListEnabled and "ВКЛ" or "ВЫКЛ")
 end
 
 function ToggleFly()
     if not ScriptRunning then return end
-    if FlyEnabled then
-        StopFly()
-    else
-        StartFly()
-    end
+    if FlyEnabled then StopFly() else StartFly() end
     if GUI and GUI.Update then GUI.Update() end
 end
 
 function ToggleESP()
     if not ScriptRunning then return end
-    
     ESPEnabled = not ESPEnabled
     
     if ESPEnabled then
         print("[XENO] 👁️ ESP ВКЛЮЧЕН")
         CreateESP()
         ESPConnection = RunService.Heartbeat:Connect(function()
-            if ESPEnabled then
-                if tick() - LastESPUpdate > 2 then
-                    CheckNewPlayers()
-                    LastESPUpdate = tick()
-                end
+            if ESPEnabled and tick() - LastESPUpdate > 2 then
+                CheckNewPlayers()
+                LastESPUpdate = tick()
             end
         end)
     else
         print("[XENO] 👁️ ESP ВЫКЛЮЧЕН")
-        if ESPConnection then
-            ESPConnection:Disconnect()
-            ESPConnection = nil
-        end
+        if ESPConnection then ESPConnection:Disconnect(); ESPConnection = nil end
         ClearESP()
     end
     if GUI and GUI.Update then GUI.Update() end
@@ -968,30 +881,18 @@ end
 
 function RestartScript()
     print("[XENO] ===== ПЕРЕЗАПУСК =====")
-    
     if FlyEnabled then StopFly() end
     if ESPEnabled then
         ESPEnabled = false
-        if ESPConnection then
-            ESPConnection:Disconnect()
-            ESPConnection = nil
-        end
+        if ESPConnection then ESPConnection:Disconnect() end
         ClearESP()
     end
     
-    local savedSettings = {
-        TriggerBot = Settings.TriggerBot,
-        WallCheck = Settings.WallCheck,
-        AimAssist = Settings.AimAssist,
-        Smoothness = Settings.Smoothness,
-        FOV = Settings.FOV,
-        TriggerRadius = Settings.TriggerRadius,
-        ShotDelay = Settings.ShotDelay,
-    }
+    local savedSettings = {}
+    for k, v in pairs(Settings) do savedSettings[k] = v end
+    
     local savedIgnoreList = {}
-    for _, name in ipairs(IgnoreList) do
-        table.insert(savedIgnoreList, name)
-    end
+    for _, name in ipairs(IgnoreList) do table.insert(savedIgnoreList, name) end
     local savedIgnoreEnabled = IgnoreListEnabled
     
     StopLoop()
@@ -999,36 +900,23 @@ function RestartScript()
     if SettingsPanel then SettingsPanel.Close() end
     GUI = CreateMainMenu()
     
-    Settings.TriggerBot = savedSettings.TriggerBot
-    Settings.WallCheck = savedSettings.WallCheck
-    Settings.AimAssist = savedSettings.AimAssist
-    Settings.Smoothness = savedSettings.Smoothness
-    Settings.FOV = savedSettings.FOV
-    Settings.TriggerRadius = savedSettings.TriggerRadius
-    Settings.ShotDelay = savedSettings.ShotDelay
-    
+    for k, v in pairs(savedSettings) do Settings[k] = v end
     IgnoreList = savedIgnoreList
     IgnoreListEnabled = savedIgnoreEnabled
     
     if GUI and GUI.Update then GUI.Update() end
     StartLoop()
-    
     print("[XENO] ✅ Перезапуск завершен!")
 end
 
 function DeleteScript()
     print("[XENO] Скрипт удален")
     ScriptRunning = false
-    
     if FlyEnabled then StopFly() end
     if ESPEnabled then
-        if ESPConnection then
-            ESPConnection:Disconnect()
-            ESPConnection = nil
-        end
+        if ESPConnection then ESPConnection:Disconnect() end
         ClearESP()
     end
-    
     StopLoop()
     if GUI then GUI.Destroy() end
     if LocalPlayer.PlayerGui:FindFirstChild("SettingsPanel") then
@@ -1037,49 +925,33 @@ function DeleteScript()
 end
 
 -- =====================================================
--- === СОЗДАНИЕ МЕНЮ И ЗАПУСК ===
+-- === СОЗДАНИЕ И ЗАПУСК ===
 -- =====================================================
-
--- Сначала создаем панель настроек (она нужна для GUI)
 SettingsPanel = CreateSettingsPanel()
-
--- Потом создаем главное меню (кнопки ссылаются на SettingsPanel)
 GUI = CreateMainMenu()
 
 -- =====================================================
 -- === КЛАВИШИ ===
 -- =====================================================
-
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end
     if not ScriptRunning then return end
     if not input.KeyCode then return end
     
-    local key = input.KeyCode
-    
-    if key == Enum.KeyCode.F1 then 
-        ToggleTrigger()
-    elseif key == Enum.KeyCode.F2 then 
-        ToggleESP()
-    elseif key == Enum.KeyCode.F3 then 
-        ToggleAim()
-    elseif key == Enum.KeyCode.F4 then 
-        ToggleIgnoreList()
-    elseif key == Enum.KeyCode.F5 then 
-        ToggleFly()
-    elseif key == Enum.KeyCode.F6 then 
-        ToggleWall()
-    elseif key == Enum.KeyCode.Insert then 
-        ToggleSettings()
-    elseif key == Enum.KeyCode.Delete then 
-        DeleteScript()
+    if input.KeyCode == Enum.KeyCode.F1 then ToggleTrigger()
+    elseif input.KeyCode == Enum.KeyCode.F2 then ToggleESP()
+    elseif input.KeyCode == Enum.KeyCode.F3 then ToggleAim()
+    elseif input.KeyCode == Enum.KeyCode.F4 then ToggleIgnoreList()
+    elseif input.KeyCode == Enum.KeyCode.F5 then ToggleFly()
+    elseif input.KeyCode == Enum.KeyCode.F6 then ToggleWall()
+    elseif input.KeyCode == Enum.KeyCode.Insert then ToggleSettings()
+    elseif input.KeyCode == Enum.KeyCode.Delete then DeleteScript()
     end
 end)
 
-local function OnAction(actionName, inputState, inputObject)
+local function OnAction(actionName, inputState)
     if inputState ~= Enum.UserInputState.Begin then return end
     if not ScriptRunning then return end
-    
     if actionName == "TriggerBot" then ToggleTrigger()
     elseif actionName == "ESP" then ToggleESP()
     elseif actionName == "AimAssist" then ToggleAim()
@@ -1103,7 +975,6 @@ ContextActionService:BindAction("Delete", OnAction, false, Enum.KeyCode.Delete)
 -- =====================================================
 -- === ОБНОВЛЕНИЕ GUI ===
 -- =====================================================
-
 RunService.Heartbeat:Connect(function()
     if ScriptRunning and GUI and GUI.Update then
         GUI.Update()
@@ -1113,11 +984,10 @@ end)
 -- =====================================================
 -- === СТАРТ ===
 -- =====================================================
-
 StartLoop()
 
 print("====================================================")
-print("🔫 TRIGGERBOT ДЛЯ XENO (КРАСИВОЕ МЕНЮ)")
+print("🔫 TRIGGERBOT ДЛЯ XENO (TEAM CHECK + AIM DISTANCE)")
 print("====================================================")
 print("📢 F1 - Триггер бот")
 print("📢 F2 - ESP (ВХ)")
@@ -1129,5 +999,6 @@ print("📢 Insert - Настройки")
 print("📢 Delete - Удалить")
 print("====================================================")
 print("👤 Игнор-лист: Dimalruw83, PikaScher")
-print("✈️ Управление полетом: WASD - движение, Space - вверх, Ctrl - вниз")
+print("🛡️ TeamCheck: НЕ бить своих")
+print("📏 Макс. дистанция аима: 300 стадов")
 print("====================================================")
