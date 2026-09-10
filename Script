@@ -1,5 +1,5 @@
 -- =====================================================
--- 🔫 TRIGGERBOT ДЛЯ XENO (С TEAM CHECK + AIM DISTANCE)
+-- 🔫 TRIGGERBOT ДЛЯ XENO (С WHITELIST)
 -- =====================================================
 
 local Players = game:GetService("Players")
@@ -24,16 +24,16 @@ local Settings = {
     TriggerRadius = 60,
     ShotDelay = 0.05,
     TeamCheck = true,
-    MaxAimDistance = 300, -- Максимальная дистанция для доводки (стадов)
+    MaxAimDistance = 300,
 }
 
 -- =====================================================
--- === ИГНОР-ЛИСТ ===
+-- === ИГНОР-ЛИСТ (НЕ атаковать этих игроков) ===
 -- =====================================================
 local IgnoreList = {
     "Dimalruw83",
     "PikaScher",
-    "swat228456"
+    "swat228456", -- ✅ ДОБАВЛЕН В ВАЙТЛИСТ
 }
 local IgnoreListEnabled = true
 
@@ -78,7 +78,7 @@ local function IsTeammate(player)
 end
 
 -- =====================================================
--- === ИГНОР-ЛИСТ ===
+-- === ИГНОР-ЛИСТ / ВАЙТЛИСТ ===
 -- =====================================================
 local function IsIgnored(playerName)
     if not IgnoreListEnabled then return false end
@@ -145,6 +145,7 @@ local function CreateESP()
         local humanoid = char:FindFirstChild("Humanoid")
         if not humanoid or humanoid.Health <= 0 then continue end
         
+        -- Цвет рамки: красный = враг, зелёный = свой
         local boxColor = Color3.fromRGB(255, 0, 0)
         if IsTeammate(player) then
             boxColor = Color3.fromRGB(0, 255, 0)
@@ -160,6 +161,7 @@ local function CreateESP()
         box.Parent = hrp
         table.insert(ESPObjects, box)
         
+        -- Полоска ХП
         local head = char:FindFirstChild("Head")
         local hpBar = Instance.new("BillboardGui")
         hpBar.Size = UDim2.new(0, 60, 0, 6)
@@ -370,7 +372,6 @@ local function GetTarget()
         end
         if not part then continue end
         
-        -- === ПРОВЕРКА ДИСТАНЦИИ (не более MaxAimDistance) ===
         if not IsWithinDistance(part) then continue end
         
         local aimPos = part.Position + Vector3.new(0, 2.2, 0)
@@ -411,34 +412,28 @@ local function IsOnTarget()
         if not IsAlive(char) then continue end
         
         local head = char:FindFirstChild("Head")
-        if head then
-            -- === ПРОВЕРКА ДИСТАНЦИИ ===
-            if IsWithinDistance(head) then
-                local aimPos = head.Position + Vector3.new(0, 2.2, 0)
-                local pos, onScreen = Camera:WorldToViewportPoint(aimPos)
-                if onScreen then
-                    local dist = (Vector2.new(pos.X, pos.Y) - center).Magnitude
-                    if dist < Settings.TriggerRadius then
-                        if not (Settings.WallCheck and not IsVisible(head)) then
-                            return true
-                        end
+        if head and IsWithinDistance(head) then
+            local aimPos = head.Position + Vector3.new(0, 2.2, 0)
+            local pos, onScreen = Camera:WorldToViewportPoint(aimPos)
+            if onScreen then
+                local dist = (Vector2.new(pos.X, pos.Y) - center).Magnitude
+                if dist < Settings.TriggerRadius then
+                    if not (Settings.WallCheck and not IsVisible(head)) then
+                        return true
                     end
                 end
             end
         end
         
         local hrp = char:FindFirstChild("HumanoidRootPart")
-        if hrp then
-            -- === ПРОВЕРКА ДИСТАНЦИИ ===
-            if IsWithinDistance(hrp) then
-                local aimPos = hrp.Position + Vector3.new(0, 2.2, 0)
-                local pos, onScreen = Camera:WorldToViewportPoint(aimPos)
-                if onScreen then
-                    local dist = (Vector2.new(pos.X, pos.Y) - center).Magnitude
-                    if dist < Settings.TriggerRadius + 30 then
-                        if not (Settings.WallCheck and not IsVisible(hrp)) then
-                            return true
-                        end
+        if hrp and IsWithinDistance(hrp) then
+            local aimPos = hrp.Position + Vector3.new(0, 2.2, 0)
+            local pos, onScreen = Camera:WorldToViewportPoint(aimPos)
+            if onScreen then
+                local dist = (Vector2.new(pos.X, pos.Y) - center).Magnitude
+                if dist < Settings.TriggerRadius + 30 then
+                    if not (Settings.WallCheck and not IsVisible(hrp)) then
+                        return true
                     end
                 end
             end
@@ -594,7 +589,6 @@ local function CreateSettingsPanel()
         function() return Settings.ShotDelay end,
         function(v) Settings.ShotDelay = v end, "%.2f")
     
-    -- === НОВЫЙ СЛАЙДЕР: Макс. дистанция аима ===
     CreateSlider(195, "Макс. дистанция", 50, 1000,
         function() return Settings.MaxAimDistance end,
         function(v) Settings.MaxAimDistance = v end, "%.0f")
@@ -988,7 +982,7 @@ end)
 StartLoop()
 
 print("====================================================")
-print("🔫 TRIGGERBOT ДЛЯ XENO (TEAM CHECK + AIM DISTANCE)")
+print("🔫 TRIGGERBOT ДЛЯ XENO (С WHITELIST)")
 print("====================================================")
 print("📢 F1 - Триггер бот")
 print("📢 F2 - ESP (ВХ)")
@@ -999,7 +993,7 @@ print("📢 F6 - WallCheck")
 print("📢 Insert - Настройки")
 print("📢 Delete - Удалить")
 print("====================================================")
-print("👤 Игнор-лист: Dimalruw83, PikaScher")
+print("👤 ВАЙТЛИСТ: Dimalruw83, PikaScher, swat228456")
 print("🛡️ TeamCheck: НЕ бить своих")
 print("📏 Макс. дистанция аима: 300 стадов")
 print("====================================================")
