@@ -32,7 +32,8 @@ local Settings = {
 -- =====================================================
 local IgnoreList = {
     "Dimalruw83",
-    "PikaScher"
+    "PikaScher",
+    "swat228456"
 }
 local IgnoreListEnabled = true
 
