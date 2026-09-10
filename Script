@@ -1,16 +1,24 @@
--- ========== TRIGGERBOT ДЛЯ XENO (FIXED ESP) ==========
+-- =====================================================
+-- 🔫 TRIGGERBOT ДЛЯ XENO (С КРАСИВЫМ МЕНЮ)
+-- =====================================================
+-- Версия: 2.1 (Fixed buttons)
+-- =====================================================
 
+-- === ПОДКЛЮЧЕНИЕ СЕРВИСОВ ===
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 local ContextActionService = game:GetService("ContextActionService")
+local TweenService = game:GetService("TweenService")
 
 local LocalPlayer = Players.LocalPlayer
 local Camera = Workspace.CurrentCamera
 local Mouse = LocalPlayer:GetMouse()
 
--- ===== НАСТРОЙКИ =====
+-- =====================================================
+-- === НАСТРОЙКИ ПО УМОЛЧАНИЮ ===
+-- =====================================================
 local Settings = {
     TriggerBot = false,
     WallCheck = true,
@@ -21,30 +29,57 @@ local Settings = {
     ShotDelay = 0.05,
 }
 
--- ===== ИГНОР-ЛИСТ =====
+-- =====================================================
+-- === ИГНОР-ЛИСТ ===
+-- =====================================================
 local IgnoreList = {
     "Dimalruw83",
     "PikaScher"
 }
 local IgnoreListEnabled = true
 
--- ===== ПОЛЕТ =====
+-- =====================================================
+-- === ПОЛЕТ ===
+-- =====================================================
 local FlyEnabled = false
 local FlySpeed = 40
 local FlyConnection = nil
 local NoclipConnection = nil
 
-local ScriptRunning = true
-local MainConnection = nil
-local SettingsOpen = false
-
--- ===== ESP (ВХ) =====
+-- =====================================================
+-- === ESP (ВХ) ===
+-- =====================================================
 local ESPEnabled = false
 local ESPConnection = nil
 local ESPObjects = {}
 local ESP_MAX_DISTANCE = 300
+local LastESPUpdate = 0
 
--- ===== ФУНКЦИИ =====
+-- =====================================================
+-- === ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ===
+-- =====================================================
+local ScriptRunning = true
+local MainConnection = nil
+local SettingsOpen = false
+local SettingsPanel = nil
+local GUI = nil
+
+-- =====================================================
+-- === ВПЕРЕД ОБЪЯВЛЯЕМ ВСЕ ФУНКЦИИ (чтобы не было ошибок) ===
+-- =====================================================
+local ToggleTrigger
+local ToggleWall
+local ToggleAim
+local ToggleIgnoreList
+local ToggleFly
+local ToggleESP
+local ToggleSettings
+local DeleteScript
+local RestartScript
+
+-- =====================================================
+-- === ФУНКЦИИ ДЛЯ РАБОТЫ С ИГНОР-ЛИСТОМ ===
+-- =====================================================
 local function IsIgnored(playerName)
     if not IgnoreListEnabled then return false end
     for _, name in ipairs(IgnoreList) do
@@ -55,7 +90,10 @@ local function IsIgnored(playerName)
     return false
 end
 
--- ===== ФУНКЦИИ ESP =====
+-- =====================================================
+-- === ФУНКЦИИ ESP ===
+-- =====================================================
+
 local function ClearESP()
     for _, obj in ipairs(ESPObjects) do
         pcall(function() 
@@ -104,113 +142,101 @@ local function CreateESP()
         box.Parent = hrp
         table.insert(ESPObjects, box)
         
-        -- НИК НАД ГОЛОВОЙ
+        -- ПОЛОСКА ХП
         local head = char:FindFirstChild("Head")
-        local billboard = Instance.new("BillboardGui")
-        billboard.Size = UDim2.new(0, 120, 0, 30)
-        billboard.Adornee = head or hrp
-        billboard.StudsOffset = Vector3.new(0, 4.5, 0)
-        billboard.AlwaysOnTop = true
-        billboard.Parent = hrp
-        table.insert(ESPObjects, billboard)
+        local hpBar = Instance.new("BillboardGui")
+        hpBar.Size = UDim2.new(0, 60, 0, 6)
+        hpBar.Adornee = head or hrp
+        hpBar.StudsOffset = Vector3.new(0, 4, 0)
+        hpBar.AlwaysOnTop = true
+        hpBar.Parent = hrp
+        table.insert(ESPObjects, hpBar)
         
-        local textLabel = Instance.new("TextLabel")
-        textLabel.Size = UDim2.new(1, 0, 1, 0)
-        textLabel.BackgroundTransparency = 1
-        textLabel.Text = player.Name
-        textLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-        textLabel.TextSize = 16
-        textLabel.Font = Enum.Font.GothamBold
-        textLabel.TextStrokeTransparency = 0.2
-        textLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
-        textLabel.Parent = billboard
+        local hpBg = Instance.new("Frame")
+        hpBg.Size = UDim2.new(1, 0, 1, 0)
+        hpBg.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+        hpBg.BackgroundTransparency = 0.3
+        hpBg.BorderSizePixel = 0
+        hpBg.Parent = hpBar
         
-        -- ДИСТАНЦИЯ (обновляется в цикле)
-        local distLabel = Instance.new("TextLabel")
-        distLabel.Name = "DistLabel"
-        distLabel.Size = UDim2.new(1, 0, 0, 16)
-        distLabel.Position = UDim2.new(0, 0, 1, 0)
-        distLabel.BackgroundTransparency = 1
-        distLabel.Text = math.floor(dist) .. " м"
-        distLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-        distLabel.TextSize = 12
-        distLabel.Font = Enum.Font.Gotham
-        distLabel.Parent = billboard
-    end
-end
-
--- Обновление дистанции в ESP
-local function UpdateESPDistances()
-    if not ESPEnabled then return end
-    if not LocalPlayer.Character then return end
-    
-    local myPos = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-    if not myPos then return end
-    myPos = myPos.Position
-    
-    for _, obj in ipairs(ESPObjects) do
-        if obj:IsA("BillboardGui") then
-            local hrp = obj.Parent
-            if hrp and hrp:IsA("BasePart") then
-                local dist = (myPos - hrp.Position).Magnitude
-                for _, child in ipairs(obj:GetChildren()) do
-                    if child:IsA("TextLabel") and child.Name == "DistLabel" then
-                        child.Text = math.floor(dist) .. " м"
-                    end
+        local hpFill = Instance.new("Frame")
+        hpFill.Name = "HPFill"
+        hpFill.Size = UDim2.new(1, 0, 1, 0)
+        hpFill.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+        hpFill.BorderSizePixel = 0
+        hpFill.Parent = hpBg
+        
+        local function UpdateHP()
+            local humanoid = char:FindFirstChild("Humanoid")
+            if humanoid then
+                local health = humanoid.Health / humanoid.MaxHealth
+                hpFill.Size = UDim2.new(health, 0, 1, 0)
+                if health > 0.6 then
+                    hpFill.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+                elseif health > 0.3 then
+                    hpFill.BackgroundColor3 = Color3.fromRGB(255, 200, 0)
+                else
+                    hpFill.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
                 end
             end
         end
-    end
-end
-
-local function ToggleESP()
-    if not ScriptRunning then return end
-    
-    ESPEnabled = not ESPEnabled
-    
-    if ESPEnabled then
-        print("[XENO] 👁️ ESP ВКЛЮЧЕН (дальность: " .. ESP_MAX_DISTANCE .. " м)")
-        CreateESP()
         
-        -- Обновление ESP каждые 0.3 секунды
-        ESPConnection = RunService.Heartbeat:Connect(function()
-            if ESPEnabled then
-                -- Обновляем дистанции
-                UpdateESPDistances()
-                -- Проверяем мертвых игроков и пересоздаем если нужно
-                local needRebuild = false
-                for _, obj in ipairs(ESPObjects) do
-                    if obj:IsA("BillboardGui") then
-                        local parent = obj.Adornee
-                        if parent then
-                            local char = parent.Parent
-                            if char and char:IsA("Model") then
-                                local humanoid = char:FindFirstChild("Humanoid")
-                                if humanoid and humanoid.Health <= 0 then
-                                    needRebuild = true
-                                    break
-                                end
-                            end
-                        end
-                    end
-                end
-                if needRebuild then
-                    CreateESP()
-                end
+        task.spawn(function()
+            while hpFill and hpFill.Parent and humanoid and humanoid.Parent do
+                if not ESPEnabled then break end
+                UpdateHP()
+                task.wait(0.1)
             end
         end)
-    else
-        print("[XENO] 👁️ ESP ВЫКЛЮЧЕН")
-        if ESPConnection then
-            ESPConnection:Disconnect()
-            ESPConnection = nil
-        end
-        ClearESP()
+        
+        UpdateHP()
     end
-    GUI.Update()
 end
 
--- ===== ФУНКЦИИ ПОЛЕТА =====
+local function CheckNewPlayers()
+    if not ESPEnabled then return end
+    
+    local currentPlayers = {}
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and not IsIgnored(player.Name) then
+            local char = player.Character
+            if char and char:FindFirstChild("HumanoidRootPart") then
+                local humanoid = char:FindFirstChild("Humanoid")
+                if humanoid and humanoid.Health > 0 then
+                    currentPlayers[player.Name] = true
+                end
+            end
+        end
+    end
+    
+    local existingPlayers = {}
+    for _, obj in ipairs(ESPObjects) do
+        if obj:IsA("BoxHandleAdornment") then
+            local parent = obj.Parent
+            if parent and parent:IsA("BasePart") then
+                local char = parent.Parent
+                if char and char:IsA("Model") then
+                    local player = Players:GetPlayerFromCharacter(char)
+                    if player then
+                        existingPlayers[player.Name] = true
+                    end
+                end
+            end
+        end
+    end
+    
+    for name in pairs(currentPlayers) do
+        if not existingPlayers[name] then
+            CreateESP()
+            return
+        end
+    end
+end
+
+-- =====================================================
+-- === ФУНКЦИИ ПОЛЕТА ===
+-- =====================================================
+
 local function StartFly()
     if FlyEnabled then return end
     if not LocalPlayer.Character then return end
@@ -225,8 +251,8 @@ local function StartFly()
     end
     
     FlyEnabled = true
-    print("[XENO] 🚀 Полет включен (скорость: " .. FlySpeed .. ")")
-    GUI.Update()
+    print("[XENO] 🚀 Полет включен")
+    if GUI and GUI.Update then GUI.Update() end
     
     FlyConnection = RunService.RenderStepped:Connect(function()
         if not FlyEnabled or not LocalPlayer.Character then
@@ -308,446 +334,13 @@ local function StopFly()
     end
     
     print("[XENO] 🚀 Полет выключен")
-    GUI.Update()
+    if GUI and GUI.Update then GUI.Update() end
 end
 
-local function ToggleFly()
-    if not ScriptRunning then return end
-    
-    if FlyEnabled then
-        StopFly()
-    else
-        StartFly()
-    end
-end
+-- =====================================================
+-- === ФУНКЦИИ ДЛЯ ТРИГГЕРБОТА ===
+-- =====================================================
 
--- ===== СОЗДАНИЕ GUI =====
-local function CreateGUI()
-    pcall(function()
-        if LocalPlayer.PlayerGui:FindFirstChild("TriggerGUI") then
-            LocalPlayer.PlayerGui.TriggerGUI:Destroy()
-        end
-    end)
-    
-    local screenGui = Instance.new("ScreenGui")
-    screenGui.Name = "TriggerGUI"
-    screenGui.Parent = LocalPlayer.PlayerGui
-    screenGui.ResetOnSpawn = false
-    
-    local mainFrame = Instance.new("Frame")
-    mainFrame.Name = "MainFrame"
-    mainFrame.Size = UDim2.new(0, 230, 0, 260)
-    mainFrame.Position = UDim2.new(0, 10, 0, 10)
-    mainFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-    mainFrame.BackgroundTransparency = 0.3
-    mainFrame.BorderSizePixel = 0
-    mainFrame.Parent = screenGui
-    
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 8)
-    corner.Parent = mainFrame
-    
-    local title = Instance.new("TextLabel")
-    title.Size = UDim2.new(1, 0, 0, 25)
-    title.Position = UDim2.new(0, 0, 0, 0)
-    title.BackgroundTransparency = 1
-    title.Text = "🔫 TRIGGERBOT"
-    title.TextColor3 = Color3.fromRGB(255, 255, 255)
-    title.TextSize = 16
-    title.Font = Enum.Font.GothamBold
-    title.TextXAlignment = Enum.TextXAlignment.Center
-    title.Parent = mainFrame
-    
-    local statuses = {}
-    local function MakeLine(text, y, getValue, getColor)
-        local container = Instance.new("Frame")
-        container.Size = UDim2.new(1, -20, 0, 22)
-        container.Position = UDim2.new(0, 10, 0, y)
-        container.BackgroundTransparency = 1
-        container.Parent = mainFrame
-        
-        local label = Instance.new("TextLabel")
-        label.Size = UDim2.new(0.6, 0, 1, 0)
-        label.BackgroundTransparency = 1
-        label.Text = text
-        label.TextColor3 = Color3.fromRGB(200, 200, 200)
-        label.TextSize = 13
-        label.Font = Enum.Font.Gotham
-        label.TextXAlignment = Enum.TextXAlignment.Left
-        label.Parent = container
-        
-        local status = Instance.new("TextLabel")
-        status.Size = UDim2.new(0.4, 0, 1, 0)
-        status.Position = UDim2.new(0.6, 0, 0, 0)
-        status.BackgroundTransparency = 1
-        status.Text = getValue() and "ВКЛ" or "ВЫКЛ"
-        status.TextColor3 = getColor and getColor() or (getValue() and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0))
-        status.TextSize = 13
-        status.Font = Enum.Font.GothamBold
-        status.TextXAlignment = Enum.TextXAlignment.Right
-        status.Parent = container
-        
-        return status
-    end
-    
-    statuses.trigger = MakeLine("TriggerBot", 30, function() return Settings.TriggerBot end)
-    statuses.wall = MakeLine("WallCheck", 55, function() return Settings.WallCheck end)
-    statuses.aim = MakeLine("Доводка", 80, function() return Settings.AimAssist end)
-    statuses.ignore = MakeLine("Игнор-лист", 105, 
-        function() return IgnoreListEnabled and #IgnoreList > 0 end,
-        function() 
-            if not IgnoreListEnabled then
-                return Color3.fromRGB(255, 0, 0)
-            elseif #IgnoreList > 0 then
-                return Color3.fromRGB(0, 255, 0)
-            else
-                return Color3.fromRGB(255, 0, 0)
-            end
-        end
-    )
-    statuses.fly = MakeLine("Полет", 130, function() return FlyEnabled end)
-    statuses.esp = MakeLine("ESP (ВХ)", 155, function() return ESPEnabled end)
-    
-    local hintContainer = Instance.new("Frame")
-    hintContainer.Size = UDim2.new(1, -20, 0, 90)
-    hintContainer.Position = UDim2.new(0, 10, 0, 180)
-    hintContainer.BackgroundTransparency = 1
-    hintContainer.Parent = mainFrame
-    
-    local hints = {
-        {"F1", "Триггер"},
-        {"F2", "ESP"},
-        {"F3", "Доводка"},
-        {"F4", "Полет"},
-        {"F5", "Игнор"},
-        {"F6", "WallCheck"},
-        {"Insert", "Настройки"},
-        {"Del", "Удалить"},
-    }
-    
-    for i, hint in ipairs(hints) do
-        local col = math.floor((i - 1) / 3)
-        local row = (i - 1) % 3
-        
-        local container = Instance.new("Frame")
-        container.Size = UDim2.new(0.33, -5, 0, 25)
-        container.Position = UDim2.new(col * 0.34, 0, row * 0.34, 0)
-        container.BackgroundTransparency = 1
-        container.Parent = hintContainer
-        
-        local keyLabel = Instance.new("TextLabel")
-        keyLabel.Size = UDim2.new(0.45, 0, 1, 0)
-        keyLabel.Position = UDim2.new(0, 0, 0, 0)
-        keyLabel.BackgroundTransparency = 1
-        keyLabel.Text = hint[1]
-        keyLabel.TextColor3 = Color3.fromRGB(255, 200, 100)
-        keyLabel.TextSize = 11
-        keyLabel.Font = Enum.Font.GothamBold
-        keyLabel.TextXAlignment = Enum.TextXAlignment.Left
-        keyLabel.Parent = container
-        
-        local descLabel = Instance.new("TextLabel")
-        descLabel.Size = UDim2.new(0.55, 0, 1, 0)
-        descLabel.Position = UDim2.new(0.45, 0, 0, 0)
-        descLabel.BackgroundTransparency = 1
-        descLabel.Text = hint[2]
-        descLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
-        descLabel.TextSize = 10
-        descLabel.Font = Enum.Font.Gotham
-        descLabel.TextXAlignment = Enum.TextXAlignment.Left
-        descLabel.Parent = container
-    end
-    
-    -- ===== ПАНЕЛЬ НАСТРОЕК =====
-    local settingsPanel = Instance.new("Frame")
-    settingsPanel.Name = "SettingsPanel"
-    settingsPanel.Size = UDim2.new(0, 280, 0, 280)
-    settingsPanel.Position = UDim2.new(0, 250, 0, 10)
-    settingsPanel.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-    settingsPanel.BackgroundTransparency = 0.3
-    settingsPanel.BorderSizePixel = 0
-    settingsPanel.Visible = false
-    settingsPanel.Parent = screenGui
-    
-    local cornerS = Instance.new("UICorner")
-    cornerS.CornerRadius = UDim.new(0, 8)
-    cornerS.Parent = settingsPanel
-    
-    local titleS = Instance.new("TextLabel")
-    titleS.Size = UDim2.new(1, 0, 0, 25)
-    titleS.Position = UDim2.new(0, 0, 0, 0)
-    titleS.BackgroundTransparency = 1
-    titleS.Text = "⚙️ НАСТРОЙКИ"
-    titleS.TextColor3 = Color3.fromRGB(255, 255, 255)
-    titleS.TextSize = 16
-    titleS.Font = Enum.Font.GothamBold
-    titleS.TextXAlignment = Enum.TextXAlignment.Center
-    titleS.Parent = settingsPanel
-    
-    local function MakeSlider(text, y, minVal, maxVal, getValue, setValue, displayFormat, step)
-        displayFormat = displayFormat or "%.2f"
-        step = step or (maxVal - minVal) / 20
-        
-        local container = Instance.new("Frame")
-        container.Size = UDim2.new(1, -20, 0, 30)
-        container.Position = UDim2.new(0, 10, 0, y)
-        container.BackgroundTransparency = 1
-        container.Parent = settingsPanel
-        
-        local label = Instance.new("TextLabel")
-        label.Size = UDim2.new(0.5, 0, 1, 0)
-        label.Position = UDim2.new(0, 0, 0, 0)
-        label.BackgroundTransparency = 1
-        label.Text = text
-        label.TextColor3 = Color3.fromRGB(200, 200, 200)
-        label.TextSize = 12
-        label.Font = Enum.Font.Gotham
-        label.TextXAlignment = Enum.TextXAlignment.Left
-        label.Parent = container
-        
-        local valueLabel = Instance.new("TextLabel")
-        valueLabel.Name = "ValueLabel"
-        valueLabel.Size = UDim2.new(0.2, 0, 1, 0)
-        valueLabel.Position = UDim2.new(0.8, 0, 0, 0)
-        valueLabel.BackgroundTransparency = 1
-        valueLabel.Text = string.format(displayFormat, getValue())
-        valueLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-        valueLabel.TextSize = 12
-        valueLabel.Font = Enum.Font.GothamBold
-        valueLabel.TextXAlignment = Enum.TextXAlignment.Right
-        valueLabel.Parent = container
-        
-        local minus = Instance.new("TextButton")
-        minus.Size = UDim2.new(0, 22, 1, 0)
-        minus.Position = UDim2.new(0.52, 0, 0, 0)
-        minus.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
-        minus.Text = "−"
-        minus.TextColor3 = Color3.fromRGB(255, 255, 255)
-        minus.TextSize = 16
-        minus.Font = Enum.Font.GothamBold
-        minus.Parent = container
-        
-        local plus = Instance.new("TextButton")
-        plus.Size = UDim2.new(0, 22, 1, 0)
-        plus.Position = UDim2.new(0.58, 0, 0, 0)
-        plus.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
-        plus.Text = "+"
-        plus.TextColor3 = Color3.fromRGB(255, 255, 255)
-        plus.TextSize = 16
-        plus.Font = Enum.Font.GothamBold
-        plus.Parent = container
-        
-        local c1 = Instance.new("UICorner")
-        c1.CornerRadius = UDim.new(0, 4)
-        c1.Parent = minus
-        local c2 = Instance.new("UICorner")
-        c2.CornerRadius = UDim.new(0, 4)
-        c2.Parent = plus
-        
-        local function UpdateValue(newVal)
-            newVal = math.max(minVal, math.min(maxVal, newVal))
-            setValue(newVal)
-            valueLabel.Text = string.format(displayFormat, newVal)
-        end
-        
-        minus.MouseButton1Click:Connect(function() UpdateValue(getValue() - step) end)
-        plus.MouseButton1Click:Connect(function() UpdateValue(getValue() + step) end)
-        
-        minus.MouseEnter:Connect(function() minus.BackgroundColor3 = Color3.fromRGB(60, 60, 80) end)
-        minus.MouseLeave:Connect(function() minus.BackgroundColor3 = Color3.fromRGB(40, 40, 60) end)
-        plus.MouseEnter:Connect(function() plus.BackgroundColor3 = Color3.fromRGB(60, 60, 80) end)
-        plus.MouseLeave:Connect(function() plus.BackgroundColor3 = Color3.fromRGB(40, 40, 60) end)
-        
-        return valueLabel
-    end
-    
-    MakeSlider("Плавность", 30, 0.05, 0.95, 
-        function() return Settings.Smoothness end,
-        function(v) Settings.Smoothness = v end,
-        "%.2f", 0.05
-    )
-    MakeSlider("Радиус доводки", 65, 50, 500,
-        function() return Settings.FOV end,
-        function(v) Settings.FOV = v end,
-        "%.0f", 25
-    )
-    MakeSlider("Радиус триггера", 100, 20, 150,
-        function() return Settings.TriggerRadius end,
-        function(v) Settings.TriggerRadius = v end,
-        "%.0f", 5
-    )
-    MakeSlider("Задержка (сек)", 135, 0.01, 0.50,
-        function() return Settings.ShotDelay end,
-        function(v) Settings.ShotDelay = v end,
-        "%.2f", 0.01
-    )
-    
-    local ignoreLabel = Instance.new("TextLabel")
-    ignoreLabel.Size = UDim2.new(1, -20, 0, 20)
-    ignoreLabel.Position = UDim2.new(0, 10, 0, 170)
-    ignoreLabel.BackgroundTransparency = 1
-    ignoreLabel.Text = "👤 ИГНОР-ЛИСТ (F5 - вкл/выкл)"
-    ignoreLabel.TextColor3 = Color3.fromRGB(255, 200, 100)
-    ignoreLabel.TextSize = 12
-    ignoreLabel.Font = Enum.Font.GothamBold
-    ignoreLabel.TextXAlignment = Enum.TextXAlignment.Left
-    ignoreLabel.Parent = settingsPanel
-    
-    local inputBox = Instance.new("TextBox")
-    inputBox.Size = UDim2.new(0.55, 0, 0, 25)
-    inputBox.Position = UDim2.new(0, 10, 0, 195)
-    inputBox.BackgroundColor3 = Color3.fromRGB(30, 30, 50)
-    inputBox.TextColor3 = Color3.fromRGB(255, 255, 255)
-    inputBox.Text = ""
-    inputBox.PlaceholderText = "Введите ник"
-    inputBox.TextSize = 13
-    inputBox.Font = Enum.Font.Gotham
-    inputBox.Parent = settingsPanel
-    
-    local inputCorner = Instance.new("UICorner")
-    inputCorner.CornerRadius = UDim.new(0, 5)
-    inputCorner.Parent = inputBox
-    
-    local addBtn = Instance.new("TextButton")
-    addBtn.Size = UDim2.new(0.35, 0, 0, 25)
-    addBtn.Position = UDim2.new(0.6, 5, 0, 195)
-    addBtn.BackgroundColor3 = Color3.fromRGB(40, 60, 40)
-    addBtn.Text = "➕ Добавить"
-    addBtn.TextColor3 = Color3.fromRGB(0, 255, 0)
-    addBtn.TextSize = 12
-    addBtn.Font = Enum.Font.GothamBold
-    addBtn.Parent = settingsPanel
-    
-    local addCorner = Instance.new("UICorner")
-    addCorner.CornerRadius = UDim.new(0, 5)
-    addCorner.Parent = addBtn
-    
-    addBtn.MouseButton1Click:Connect(function()
-        local name = inputBox.Text:gsub("%s+", "")
-        if name ~= "" and name ~= LocalPlayer.Name then
-            if not table.find(IgnoreList, name) then
-                table.insert(IgnoreList, name)
-                inputBox.Text = ""
-                print("[XENO] Добавлен в игнор:", name)
-                UpdateIgnoreList()
-                GUI.Update()
-                if ESPEnabled then CreateESP() end
-            else
-                print("[XENO] Игрок уже в игнор-листе:", name)
-                inputBox.Text = ""
-            end
-        end
-    end)
-    
-    addBtn.MouseEnter:Connect(function() addBtn.BackgroundColor3 = Color3.fromRGB(60, 80, 60) end)
-    addBtn.MouseLeave:Connect(function() addBtn.BackgroundColor3 = Color3.fromRGB(40, 60, 40) end)
-    
-    local ignoreListFrame = Instance.new("Frame")
-    ignoreListFrame.Size = UDim2.new(1, -20, 0, 40)
-    ignoreListFrame.Position = UDim2.new(0, 10, 0, 225)
-    ignoreListFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 40)
-    ignoreListFrame.BackgroundTransparency = 0.5
-    ignoreListFrame.BorderSizePixel = 0
-    ignoreListFrame.Parent = settingsPanel
-    
-    local ignoreCorner = Instance.new("UICorner")
-    ignoreCorner.CornerRadius = UDim.new(0, 5)
-    ignoreCorner.Parent = ignoreListFrame
-    
-    local ignoreListLabel = Instance.new("TextLabel")
-    ignoreListLabel.Name = "IgnoreListLabel"
-    ignoreListLabel.Size = UDim2.new(1, 0, 1, 0)
-    ignoreListLabel.BackgroundTransparency = 1
-    ignoreListLabel.Text = ""
-    ignoreListLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
-    ignoreListLabel.TextSize = 11
-    ignoreListLabel.Font = Enum.Font.Gotham
-    ignoreListLabel.TextWrapped = true
-    ignoreListLabel.Parent = ignoreListFrame
-    
-    local closeBtn = Instance.new("TextButton")
-    closeBtn.Size = UDim2.new(0.3, 0, 0, 25)
-    closeBtn.Position = UDim2.new(0.35, 0, 0, 250)
-    closeBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
-    closeBtn.Text = "Закрыть"
-    closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    closeBtn.TextSize = 12
-    closeBtn.Font = Enum.Font.GothamBold
-    closeBtn.Parent = settingsPanel
-    
-    local cClose = Instance.new("UICorner")
-    cClose.CornerRadius = UDim.new(0, 5)
-    cClose.Parent = closeBtn
-    
-    closeBtn.MouseButton1Click:Connect(function() 
-        if ScriptRunning then
-            ToggleSettings()
-        end
-    end)
-    closeBtn.MouseEnter:Connect(function() closeBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 80) end)
-    closeBtn.MouseLeave:Connect(function() closeBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 60) end)
-    
-    local function UpdateIgnoreList()
-        if #IgnoreList == 0 then
-            ignoreListLabel.Text = "Пусто"
-        else
-            ignoreListLabel.Text = table.concat(IgnoreList, ", ")
-        end
-    end
-    
-    return {
-        Update = function()
-            statuses.trigger.Text = Settings.TriggerBot and "ВКЛ" or "ВЫКЛ"
-            statuses.trigger.TextColor3 = Settings.TriggerBot and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
-            
-            statuses.wall.Text = Settings.WallCheck and "ВКЛ" or "ВЫКЛ"
-            statuses.wall.TextColor3 = Settings.WallCheck and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
-            
-            statuses.aim.Text = Settings.AimAssist and "ВКЛ" or "ВЫКЛ"
-            statuses.aim.TextColor3 = Settings.AimAssist and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
-            
-            if not IgnoreListEnabled then
-                statuses.ignore.Text = "ВЫКЛ"
-                statuses.ignore.TextColor3 = Color3.fromRGB(255, 0, 0)
-            elseif #IgnoreList > 0 then
-                statuses.ignore.Text = "ВКЛ"
-                statuses.ignore.TextColor3 = Color3.fromRGB(0, 255, 0)
-            else
-                statuses.ignore.Text = "ВЫКЛ"
-                statuses.ignore.TextColor3 = Color3.fromRGB(255, 0, 0)
-            end
-            
-            statuses.fly.Text = FlyEnabled and "ВКЛ" or "ВЫКЛ"
-            statuses.fly.TextColor3 = FlyEnabled and Color3.fromRGB(0, 255, 255) or Color3.fromRGB(255, 0, 0)
-            
-            statuses.esp.Text = ESPEnabled and "ВКЛ" or "ВЫКЛ"
-            statuses.esp.TextColor3 = ESPEnabled and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
-            
-            UpdateIgnoreList()
-        end,
-        Destroy = function()
-            screenGui:Destroy()
-        end,
-        ToggleSettings = function()
-            if not settingsPanel then return end
-            settingsPanel.Visible = not settingsPanel.Visible
-            SettingsOpen = settingsPanel.Visible
-            if settingsPanel.Visible then
-                UpdateIgnoreList()
-            end
-        end,
-        CloseSettings = function()
-            if settingsPanel then
-                settingsPanel.Visible = false
-                SettingsOpen = false
-            end
-        end
-    }
-end
-
-local GUI = CreateGUI()
-
--- ===== ФУНКЦИИ ДЛЯ ТРИГГЕРБОТА =====
 local function IsAlive(char)
     if not char then return false end
     local humanoid = char:FindFirstChild("Humanoid")
@@ -893,7 +486,9 @@ local function MainLoop()
     end
 end
 
--- ===== ЗАПУСК/ОСТАНОВКА =====
+-- =====================================================
+-- === ЗАПУСК/ОСТАНОВКА ЦИКЛОВ ===
+-- =====================================================
 local function StartLoop()
     if MainConnection then
         MainConnection:Disconnect()
@@ -911,36 +506,422 @@ local function StopLoop()
     end
 end
 
--- ===== ПЕРЕКЛЮЧЕНИЯ =====
-local function ToggleSettings()
+-- =====================================================
+-- === ПАНЕЛЬ НАСТРОЕК ===
+-- =====================================================
+
+local function CreateSettingsPanel()
+    pcall(function()
+        if LocalPlayer.PlayerGui:FindFirstChild("SettingsPanel") then
+            LocalPlayer.PlayerGui.SettingsPanel:Destroy()
+        end
+    end)
+    
+    local ScreenGui = Instance.new("ScreenGui")
+    ScreenGui.Name = "SettingsPanel"
+    ScreenGui.Parent = LocalPlayer.PlayerGui
+    ScreenGui.ResetOnSpawn = false
+    ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    ScreenGui.DisplayOrder = 1000
+    
+    local MainFrame = Instance.new("Frame")
+    MainFrame.Size = UDim2.new(0, 280, 0, 250)
+    MainFrame.Position = UDim2.new(0, 260, 0, 40)
+    MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+    MainFrame.BorderColor3 = Color3.fromRGB(60, 60, 60)
+    MainFrame.BorderSizePixel = 1
+    MainFrame.Visible = false
+    MainFrame.Parent = ScreenGui
+    
+    local MainCorner = Instance.new("UICorner")
+    MainCorner.CornerRadius = UDim.new(0, 10)
+    MainCorner.Parent = MainFrame
+    
+    local Title = Instance.new("TextLabel")
+    Title.Size = UDim2.new(1, 0, 0, 30)
+    Title.Position = UDim2.new(0, 0, 0, 0)
+    Title.BackgroundTransparency = 1
+    Title.Text = "⚙️ НАСТРОЙКИ"
+    Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+    Title.TextSize = 18
+    Title.Font = Enum.Font.GothamBold
+    Title.Parent = MainFrame
+    
+    local function CreateSlider(yPos, text, minVal, maxVal, getValue, setValue, displayFormat)
+        displayFormat = displayFormat or "%.2f"
+        
+        local Container = Instance.new("Frame")
+        Container.Size = UDim2.new(1, -20, 0, 35)
+        Container.Position = UDim2.new(0, 10, 0, yPos)
+        Container.BackgroundTransparency = 1
+        Container.Parent = MainFrame
+        
+        local Label = Instance.new("TextLabel")
+        Label.Size = UDim2.new(0.5, 0, 1, 0)
+        Label.BackgroundTransparency = 1
+        Label.Text = text
+        Label.TextColor3 = Color3.fromRGB(200, 200, 200)
+        Label.TextSize = 13
+        Label.Font = Enum.Font.Gotham
+        Label.TextXAlignment = Enum.TextXAlignment.Left
+        Label.Parent = Container
+        
+        local ValueLabel = Instance.new("TextLabel")
+        ValueLabel.Size = UDim2.new(0.2, 0, 1, 0)
+        ValueLabel.Position = UDim2.new(0.8, 0, 0, 0)
+        ValueLabel.BackgroundTransparency = 1
+        ValueLabel.Text = string.format(displayFormat, getValue())
+        ValueLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+        ValueLabel.TextSize = 13
+        ValueLabel.Font = Enum.Font.GothamBold
+        ValueLabel.TextXAlignment = Enum.TextXAlignment.Right
+        ValueLabel.Parent = Container
+        
+        local MinusBtn = Instance.new("TextButton")
+        MinusBtn.Size = UDim2.new(0, 22, 1, 0)
+        MinusBtn.Position = UDim2.new(0.52, 0, 0, 0)
+        MinusBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
+        MinusBtn.Text = "−"
+        MinusBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        MinusBtn.TextSize = 16
+        MinusBtn.Font = Enum.Font.GothamBold
+        MinusBtn.Parent = Container
+        
+        local MinusCorner = Instance.new("UICorner")
+        MinusCorner.CornerRadius = UDim.new(0, 4)
+        MinusCorner.Parent = MinusBtn
+        
+        local PlusBtn = Instance.new("TextButton")
+        PlusBtn.Size = UDim2.new(0, 22, 1, 0)
+        PlusBtn.Position = UDim2.new(0.58, 0, 0, 0)
+        PlusBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
+        PlusBtn.Text = "+"
+        PlusBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        PlusBtn.TextSize = 16
+        PlusBtn.Font = Enum.Font.GothamBold
+        PlusBtn.Parent = Container
+        
+        local PlusCorner = Instance.new("UICorner")
+        PlusCorner.CornerRadius = UDim.new(0, 4)
+        PlusCorner.Parent = PlusBtn
+        
+        local function UpdateValue(newVal)
+            newVal = math.max(minVal, math.min(maxVal, newVal))
+            setValue(newVal)
+            ValueLabel.Text = string.format(displayFormat, newVal)
+        end
+        
+        MinusBtn.MouseButton1Click:Connect(function()
+            UpdateValue(getValue() - (maxVal - minVal) / 20)
+        end)
+        
+        PlusBtn.MouseButton1Click:Connect(function()
+            UpdateValue(getValue() + (maxVal - minVal) / 20)
+        end)
+        
+        MinusBtn.MouseEnter:Connect(function() MinusBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 80) end)
+        MinusBtn.MouseLeave:Connect(function() MinusBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 60) end)
+        PlusBtn.MouseEnter:Connect(function() PlusBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 80) end)
+        PlusBtn.MouseLeave:Connect(function() PlusBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 60) end)
+        
+        return ValueLabel
+    end
+    
+    CreateSlider(35, "Плавность", 0.05, 0.95, 
+        function() return Settings.Smoothness end,
+        function(v) Settings.Smoothness = v end,
+        "%.2f"
+    )
+    
+    CreateSlider(75, "Радиус доводки", 50, 500,
+        function() return Settings.FOV end,
+        function(v) Settings.FOV = v end,
+        "%.0f"
+    )
+    
+    CreateSlider(115, "Радиус триггера", 20, 150,
+        function() return Settings.TriggerRadius end,
+        function(v) Settings.TriggerRadius = v end,
+        "%.0f"
+    )
+    
+    CreateSlider(155, "Задержка (сек)", 0.01, 0.50,
+        function() return Settings.ShotDelay end,
+        function(v) Settings.ShotDelay = v end,
+        "%.2f"
+    )
+    
+    local CloseBtn = Instance.new("TextButton")
+    CloseBtn.Size = UDim2.new(0.3, 0, 0, 30)
+    CloseBtn.Position = UDim2.new(0.35, 0, 0, 200)
+    CloseBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
+    CloseBtn.Text = "ЗАКРЫТЬ"
+    CloseBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    CloseBtn.TextSize = 13
+    CloseBtn.Font = Enum.Font.GothamBold
+    CloseBtn.Parent = MainFrame
+    
+    local CloseCorner = Instance.new("UICorner")
+    CloseCorner.CornerRadius = UDim.new(0, 6)
+    CloseCorner.Parent = CloseBtn
+    
+    CloseBtn.MouseButton1Click:Connect(function()
+        MainFrame.Visible = false
+        SettingsOpen = false
+    end)
+    
+    CloseBtn.MouseEnter:Connect(function() CloseBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 80) end)
+    CloseBtn.MouseLeave:Connect(function() CloseBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 60) end)
+    
+    return {
+        Toggle = function()
+            MainFrame.Visible = not MainFrame.Visible
+            SettingsOpen = MainFrame.Visible
+        end,
+        Close = function()
+            MainFrame.Visible = false
+            SettingsOpen = false
+        end,
+        IsOpen = function()
+            return MainFrame.Visible
+        end
+    }
+end
+
+-- =====================================================
+-- === ГЛАВНОЕ МЕНЮ ===
+-- =====================================================
+
+local function CreateMainMenu()
+    pcall(function()
+        if LocalPlayer.PlayerGui:FindFirstChild("CustomMenu") then
+            LocalPlayer.PlayerGui.CustomMenu:Destroy()
+        end
+    end)
+    
+    local ScreenGui = Instance.new("ScreenGui")
+    ScreenGui.Name = "CustomMenu"
+    ScreenGui.Parent = LocalPlayer.PlayerGui
+    ScreenGui.ResetOnSpawn = false
+    ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    ScreenGui.DisplayOrder = 999
+    
+    local MainFrame = Instance.new("Frame")
+    MainFrame.Size = UDim2.new(0, 240, 0, 340)
+    MainFrame.Position = UDim2.new(0, 10, 0, 40)
+    MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+    MainFrame.BorderColor3 = Color3.fromRGB(60, 60, 60)
+    MainFrame.BorderSizePixel = 1
+    MainFrame.Parent = ScreenGui
+    
+    local MainCorner = Instance.new("UICorner")
+    MainCorner.CornerRadius = UDim.new(0, 10)
+    MainCorner.Parent = MainFrame
+    
+    local Title = Instance.new("TextLabel")
+    Title.Size = UDim2.new(1, 0, 0, 35)
+    Title.Position = UDim2.new(0, 0, 0, 0)
+    Title.BackgroundTransparency = 1
+    Title.Text = "🔫 TRIGGERBOT"
+    Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+    Title.TextSize = 20
+    Title.Font = Enum.Font.GothamBold
+    Title.Parent = MainFrame
+    
+    local function CreateMenuButton(yPos, text, keybind, getState, toggleFunc)
+        local Container = Instance.new("Frame")
+        Container.Size = UDim2.new(1, -20, 0, 40)
+        Container.Position = UDim2.new(0, 10, 0, yPos)
+        Container.BackgroundTransparency = 1
+        Container.Parent = MainFrame
+        
+        local Button = Instance.new("TextButton")
+        Button.Size = UDim2.new(1, 0, 1, 0)
+        Button.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+        Button.Text = ""
+        Button.Parent = Container
+        
+        local ButtonCorner = Instance.new("UICorner")
+        ButtonCorner.CornerRadius = UDim.new(0, 6)
+        ButtonCorner.Parent = Button
+        
+        local Label = Instance.new("TextLabel")
+        Label.Size = UDim2.new(0.7, 0, 1, 0)
+        Label.Position = UDim2.new(0, 10, 0, 0)
+        Label.BackgroundTransparency = 1
+        Label.Text = text .. " - " .. keybind
+        Label.TextColor3 = Color3.fromRGB(255, 255, 255)
+        Label.TextSize = 13
+        Label.Font = Enum.Font.GothamBold
+        Label.TextXAlignment = Enum.TextXAlignment.Left
+        Label.Parent = Container
+        
+        -- Черный фон для индикатора
+        local IndicatorBg = Instance.new("Frame")
+        IndicatorBg.Size = UDim2.new(0, 20, 0, 20)
+        IndicatorBg.Position = UDim2.new(1, -30, 0, 10)
+        IndicatorBg.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+        IndicatorBg.BorderSizePixel = 0
+        IndicatorBg.Parent = Container
+        
+        local IndicatorBgCorner = Instance.new("UICorner")
+        IndicatorBgCorner.CornerRadius = UDim.new(1, 0)
+        IndicatorBgCorner.Parent = IndicatorBg
+        
+        local Indicator = Instance.new("Frame")
+        Indicator.Size = UDim2.new(0, 14, 0, 14)
+        Indicator.Position = UDim2.new(0, 3, 0, 3)
+        Indicator.BackgroundColor3 = getState and getState() and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
+        Indicator.BorderSizePixel = 0
+        Indicator.Parent = IndicatorBg
+        
+        local IndicatorCorner = Instance.new("UICorner")
+        IndicatorCorner.CornerRadius = UDim.new(1, 0)
+        IndicatorCorner.Parent = Indicator
+        
+        Button.MouseEnter:Connect(function()
+            Button.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+        end)
+        Button.MouseLeave:Connect(function()
+            Button.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+        end)
+        
+        Button.MouseButton1Click:Connect(function()
+            if toggleFunc then
+                toggleFunc()
+                Indicator.BackgroundColor3 = getState and getState() and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
+            end
+        end)
+        
+        return Button, Indicator
+    end
+    
+    local btn1, ind1 = CreateMenuButton(40, "TRIGGERBOT", "F1", 
+        function() return Settings.TriggerBot end,
+        function() ToggleTrigger() end
+    )
+    
+    local btn2, ind2 = CreateMenuButton(85, "ESP", "F2",
+        function() return ESPEnabled end,
+        function() ToggleESP() end
+    )
+    
+    local btn3, ind3 = CreateMenuButton(130, "ДОВОДКА", "F3",
+        function() return Settings.AimAssist end,
+        function() ToggleAim() end
+    )
+    
+    local btn4, ind4 = CreateMenuButton(175, "ИГНОР-ЛИСТ", "F4",
+        function() return IgnoreListEnabled and #IgnoreList > 0 end,
+        function() ToggleIgnoreList() end
+    )
+    
+    local btn5, ind5 = CreateMenuButton(220, "ПОЛЕТ", "F5",
+        function() return FlyEnabled end,
+        function() ToggleFly() end
+    )
+    
+    local btn6, ind6 = CreateMenuButton(265, "WALLCHECK", "F6",
+        function() return Settings.WallCheck end,
+        function() ToggleWall() end
+    )
+    
+    local SettingsBtn = Instance.new("TextButton")
+    SettingsBtn.Size = UDim2.new(0, 105, 0, 30)
+    SettingsBtn.Position = UDim2.new(0, 10, 0, 305)
+    SettingsBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 70)
+    SettingsBtn.TextColor3 = Color3.fromRGB(200, 200, 255)
+    SettingsBtn.Font = Enum.Font.GothamBold
+    SettingsBtn.TextSize = 12
+    SettingsBtn.Text = "⚙️ НАСТРОЙКИ"
+    SettingsBtn.Parent = MainFrame
+    
+    local SettingsCorner = Instance.new("UICorner")
+    SettingsCorner.CornerRadius = UDim.new(0, 6)
+    SettingsCorner.Parent = SettingsBtn
+    
+    SettingsBtn.MouseEnter:Connect(function() SettingsBtn.BackgroundColor3 = Color3.fromRGB(70, 70, 90) end)
+    SettingsBtn.MouseLeave:Connect(function() SettingsBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 70) end)
+    
+    SettingsBtn.MouseButton1Click:Connect(function()
+        if SettingsPanel then
+            SettingsPanel.Toggle()
+        end
+    end)
+    
+    local DeleteBtn = Instance.new("TextButton")
+    DeleteBtn.Size = UDim2.new(0, 105, 0, 30)
+    DeleteBtn.Position = UDim2.new(0, 125, 0, 305)
+    DeleteBtn.BackgroundColor3 = Color3.fromRGB(70, 30, 30)
+    DeleteBtn.TextColor3 = Color3.fromRGB(255, 200, 200)
+    DeleteBtn.Font = Enum.Font.GothamBold
+    DeleteBtn.TextSize = 12
+    DeleteBtn.Text = "🗑 УДАЛИТЬ"
+    DeleteBtn.Parent = MainFrame
+    
+    local DeleteCorner = Instance.new("UICorner")
+    DeleteCorner.CornerRadius = UDim.new(0, 6)
+    DeleteCorner.Parent = DeleteBtn
+    
+    DeleteBtn.MouseEnter:Connect(function() DeleteBtn.BackgroundColor3 = Color3.fromRGB(90, 40, 40) end)
+    DeleteBtn.MouseLeave:Connect(function() DeleteBtn.BackgroundColor3 = Color3.fromRGB(70, 30, 30) end)
+    
+    DeleteBtn.MouseButton1Click:Connect(function()
+        DeleteScript()
+    end)
+    
+    local function UpdateIndicators()
+        ind1.BackgroundColor3 = Settings.TriggerBot and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
+        ind2.BackgroundColor3 = ESPEnabled and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
+        ind3.BackgroundColor3 = Settings.AimAssist and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
+        ind4.BackgroundColor3 = (IgnoreListEnabled and #IgnoreList > 0) and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
+        ind5.BackgroundColor3 = FlyEnabled and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
+        ind6.BackgroundColor3 = Settings.WallCheck and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
+    end
+    
+    return {
+        Update = function()
+            UpdateIndicators()
+        end,
+        Destroy = function()
+            ScreenGui:Destroy()
+        end
+    }
+end
+
+-- =====================================================
+-- === РЕАЛИЗАЦИЯ ФУНКЦИЙ ПЕРЕКЛЮЧЕНИЯ ===
+-- =====================================================
+
+function ToggleSettings()
     if not ScriptRunning then return end
-    if GUI and GUI.ToggleSettings then
-        GUI.ToggleSettings()
+    if SettingsPanel then
+        SettingsPanel.Toggle()
     end
 end
 
-local function ToggleTrigger()
+function ToggleTrigger()
     if not ScriptRunning then return end
     Settings.TriggerBot = not Settings.TriggerBot
     if GUI and GUI.Update then GUI.Update() end
     print("[XENO] TriggerBot:", Settings.TriggerBot and "ON" or "OFF")
 end
 
-local function ToggleWall()
+function ToggleWall()
     if not ScriptRunning then return end
     Settings.WallCheck = not Settings.WallCheck
     if GUI and GUI.Update then GUI.Update() end
     print("[XENO] WallCheck:", Settings.WallCheck and "ON" or "OFF")
 end
 
-local function ToggleAim()
+function ToggleAim()
     if not ScriptRunning then return end
     Settings.AimAssist = not Settings.AimAssist
     if GUI and GUI.Update then GUI.Update() end
     print("[XENO] AimAssist:", Settings.AimAssist and "ON" or "OFF")
 end
 
-local function ToggleIgnoreList()
+function ToggleIgnoreList()
     if not ScriptRunning then return end
     IgnoreListEnabled = not IgnoreListEnabled
     if GUI and GUI.Update then GUI.Update() end
@@ -948,7 +929,44 @@ local function ToggleIgnoreList()
     print("[XENO] Игнор-лист:", IgnoreListEnabled and "ВКЛЮЧЕН" or "ВЫКЛЮЧЕН")
 end
 
-local function RestartScript()
+function ToggleFly()
+    if not ScriptRunning then return end
+    if FlyEnabled then
+        StopFly()
+    else
+        StartFly()
+    end
+    if GUI and GUI.Update then GUI.Update() end
+end
+
+function ToggleESP()
+    if not ScriptRunning then return end
+    
+    ESPEnabled = not ESPEnabled
+    
+    if ESPEnabled then
+        print("[XENO] 👁️ ESP ВКЛЮЧЕН")
+        CreateESP()
+        ESPConnection = RunService.Heartbeat:Connect(function()
+            if ESPEnabled then
+                if tick() - LastESPUpdate > 2 then
+                    CheckNewPlayers()
+                    LastESPUpdate = tick()
+                end
+            end
+        end)
+    else
+        print("[XENO] 👁️ ESP ВЫКЛЮЧЕН")
+        if ESPConnection then
+            ESPConnection:Disconnect()
+            ESPConnection = nil
+        end
+        ClearESP()
+    end
+    if GUI and GUI.Update then GUI.Update() end
+end
+
+function RestartScript()
     print("[XENO] ===== ПЕРЕЗАПУСК =====")
     
     if FlyEnabled then StopFly() end
@@ -977,9 +995,9 @@ local function RestartScript()
     local savedIgnoreEnabled = IgnoreListEnabled
     
     StopLoop()
-    if GUI and GUI.CloseSettings then GUI.CloseSettings() end
-    if GUI and GUI.Destroy then GUI.Destroy() end
-    GUI = CreateGUI()
+    if GUI then GUI.Destroy() end
+    if SettingsPanel then SettingsPanel.Close() end
+    GUI = CreateMainMenu()
     
     Settings.TriggerBot = savedSettings.TriggerBot
     Settings.WallCheck = savedSettings.WallCheck
@@ -998,7 +1016,7 @@ local function RestartScript()
     print("[XENO] ✅ Перезапуск завершен!")
 end
 
-local function DeleteScript()
+function DeleteScript()
     print("[XENO] Скрипт удален")
     ScriptRunning = false
     
@@ -1012,10 +1030,26 @@ local function DeleteScript()
     end
     
     StopLoop()
-    if GUI and GUI.Destroy then GUI.Destroy() end
+    if GUI then GUI.Destroy() end
+    if LocalPlayer.PlayerGui:FindFirstChild("SettingsPanel") then
+        LocalPlayer.PlayerGui.SettingsPanel:Destroy()
+    end
 end
 
--- ===== КЛАВИШИ =====
+-- =====================================================
+-- === СОЗДАНИЕ МЕНЮ И ЗАПУСК ===
+-- =====================================================
+
+-- Сначала создаем панель настроек (она нужна для GUI)
+SettingsPanel = CreateSettingsPanel()
+
+-- Потом создаем главное меню (кнопки ссылаются на SettingsPanel)
+GUI = CreateMainMenu()
+
+-- =====================================================
+-- === КЛАВИШИ ===
+-- =====================================================
+
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end
     if not ScriptRunning then return end
@@ -1030,9 +1064,9 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
     elseif key == Enum.KeyCode.F3 then 
         ToggleAim()
     elseif key == Enum.KeyCode.F4 then 
-        ToggleFly()
-    elseif key == Enum.KeyCode.F5 then 
         ToggleIgnoreList()
+    elseif key == Enum.KeyCode.F5 then 
+        ToggleFly()
     elseif key == Enum.KeyCode.F6 then 
         ToggleWall()
     elseif key == Enum.KeyCode.Insert then 
@@ -1042,59 +1076,58 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
     end
 end)
 
--- ContextActionService (резервный)
 local function OnAction(actionName, inputState, inputObject)
     if inputState ~= Enum.UserInputState.Begin then return end
     if not ScriptRunning then return end
     
-    if actionName == "TriggerBot" then 
-        ToggleTrigger()
-    elseif actionName == "ESP" then 
-        ToggleESP()
-    elseif actionName == "AimAssist" then 
-        ToggleAim()
-    elseif actionName == "Fly" then 
-        ToggleFly()
-    elseif actionName == "IgnoreList" then 
-        ToggleIgnoreList()
-    elseif actionName == "WallCheck" then 
-        ToggleWall()
-    elseif actionName == "Settings" then 
-        ToggleSettings()
-    elseif actionName == "Delete" then 
-        DeleteScript()
+    if actionName == "TriggerBot" then ToggleTrigger()
+    elseif actionName == "ESP" then ToggleESP()
+    elseif actionName == "AimAssist" then ToggleAim()
+    elseif actionName == "IgnoreList" then ToggleIgnoreList()
+    elseif actionName == "Fly" then ToggleFly()
+    elseif actionName == "WallCheck" then ToggleWall()
+    elseif actionName == "Settings" then ToggleSettings()
+    elseif actionName == "Delete" then DeleteScript()
     end
 end
 
 ContextActionService:BindAction("TriggerBot", OnAction, false, Enum.KeyCode.F1)
 ContextActionService:BindAction("ESP", OnAction, false, Enum.KeyCode.F2)
 ContextActionService:BindAction("AimAssist", OnAction, false, Enum.KeyCode.F3)
-ContextActionService:BindAction("Fly", OnAction, false, Enum.KeyCode.F4)
-ContextActionService:BindAction("IgnoreList", OnAction, false, Enum.KeyCode.F5)
+ContextActionService:BindAction("IgnoreList", OnAction, false, Enum.KeyCode.F4)
+ContextActionService:BindAction("Fly", OnAction, false, Enum.KeyCode.F5)
 ContextActionService:BindAction("WallCheck", OnAction, false, Enum.KeyCode.F6)
 ContextActionService:BindAction("Settings", OnAction, false, Enum.KeyCode.Insert)
 ContextActionService:BindAction("Delete", OnAction, false, Enum.KeyCode.Delete)
 
--- ===== ОБНОВЛЕНИЕ GUI =====
+-- =====================================================
+-- === ОБНОВЛЕНИЕ GUI ===
+-- =====================================================
+
 RunService.Heartbeat:Connect(function()
     if ScriptRunning and GUI and GUI.Update then
         GUI.Update()
     end
 end)
 
--- ===== СТАРТ =====
+-- =====================================================
+-- === СТАРТ ===
+-- =====================================================
+
 StartLoop()
 
-print("====================================")
-print("🔫 TRIGGERBOT ДЛЯ XENO")
+print("====================================================")
+print("🔫 TRIGGERBOT ДЛЯ XENO (КРАСИВОЕ МЕНЮ)")
+print("====================================================")
 print("📢 F1 - Триггер бот")
 print("📢 F2 - ESP (ВХ)")
 print("📢 F3 - Доводка")
-print("📢 F4 - Полет (скорость 40)")
-print("📢 F5 - Игнор-лист")
+print("📢 F4 - Игнор-лист")
+print("📢 F5 - Полет (скорость 40)")
 print("📢 F6 - WallCheck")
 print("📢 Insert - Настройки")
 print("📢 Delete - Удалить")
-print("====================================")
+print("====================================================")
 print("👤 Игнор-лист: Dimalruw83, PikaScher")
 print("✈️ Управление полетом: WASD - движение, Space - вверх, Ctrl - вниз")
+print("====================================================")
