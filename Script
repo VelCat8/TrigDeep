@@ -1,6 +1,6 @@
 -- =====================================================
--- 🔫 TRIGGERBOT ДЛЯ XENO (АДАПТИВНЫЙ TEAMCHECK v12)
--- + Настройка скорости полета | DisplayName + @username
+-- 🔫 TRIGGERBOT ДЛЯ XENO (АДАПТИВНЫЙ TEAMCHECK v13)
+-- ИСПРАВЛЕНО: порядок функций, кнопки, меню
 -- =====================================================
 
 local Players = game:GetService("Players")
@@ -31,7 +31,7 @@ local Settings = {
     AimPrecision = 20,
     AdaptiveWallCheck = true,
     AimOffset = 1.8,
-    FlySpeed = 30, -- ✅ Настройка скорости полета
+    FlySpeed = 30,
 }
 
 -- =====================================================
@@ -45,10 +45,30 @@ local IgnoreList = {
 local IgnoreListEnabled = true
 
 -- =====================================================
--- === РУЧНЫЕ СПИСКИ (ЧЕРЕЗ F10) ===
+-- === РУЧНЫЕ СПИСКИ ===
 -- =====================================================
 local ManualTeammates = {}
 local ManualEnemies = {}
+
+-- =====================================================
+-- === ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ===
+-- =====================================================
+local ScriptRunning = true
+local MainConnection = nil
+local SettingsOpen = false
+local SettingsPanel = nil
+local GUI = nil
+local PlayerPickerPanel = nil
+local FlyEnabled = false
+local FlyConnection = nil
+local NoclipConnection = nil
+local BodyVelocity = nil
+local BodyGyro = nil
+local ESPEnabled = false
+local ESPConnection = nil
+local ESPObjects = {}
+local ESP_MAX_DISTANCE = 300
+local LastESPUpdate = 0
 
 -- =====================================================
 -- === АДАПТИВНЫЙ TEAMCHECK ===
@@ -59,6 +79,22 @@ local PendingShots = {}
 local LastHealthCache = {}
 local LastCheckShot = {}
 
+-- =====================================================
+-- === ФУНКЦИИ (ОБЪЯВЛЕНЫ ЗАРАНЕЕ) ===
+-- =====================================================
+local ToggleTrigger
+local ToggleWall
+local ToggleAim
+local ToggleIgnoreList
+local ToggleFly
+local ToggleESP
+local ToggleSettings
+local DeleteScript
+local ResetTeams
+
+-- =====================================================
+-- === ПРОВЕРКИ ===
+-- =====================================================
 local function IsTracked(name)
     return KnownEnemies[name] or KnownTeammates[name] or ManualEnemies[name] or ManualTeammates[name]
 end
@@ -67,6 +103,16 @@ local function IsStandardTeammate(player)
     if not player then return false end
     if not LocalPlayer.Team then return false end
     if player.Team == LocalPlayer.Team then return true end
+    return false
+end
+
+local function IsIgnored(playerName)
+    if not IgnoreListEnabled then return false end
+    for _, name in ipairs(IgnoreList) do
+        if name:lower() == playerName:lower() then
+            return true
+        end
+    end
     return false
 end
 
@@ -107,6 +153,81 @@ local function IsVisibleForAdaptive(targetPart)
     return false
 end
 
+local function IsAlive(char)
+    if not char then return false end
+    local humanoid = char:FindFirstChild("Humanoid")
+    if not humanoid then return false end
+    if humanoid.Health <= 0 then return false end
+    return true
+end
+
+local function IsVisible(part)
+    if not part or not LocalPlayer.Character then return false end
+    local origin = LocalPlayer.Character:FindFirstChild("Head")
+    if not origin then return false end
+    
+    local params = RaycastParams.new()
+    params.FilterType = Enum.RaycastFilterType.Blacklist
+    params.FilterDescendantsInstances = {LocalPlayer.Character, Camera}
+    
+    local result = Workspace:Raycast(origin.Position, (part.Position - origin.Position).Unit * (origin.Position - part.Position).Magnitude, params)
+    
+    if not result then return true end
+    
+    local hit = result.Instance
+    if hit then
+        local player = Players:GetPlayerFromCharacter(hit.Parent)
+        if player then return true end
+    end
+    return false
+end
+
+local function IsWithinDistance(hrp)
+    if not LocalPlayer.Character then return false end
+    local myHrp = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not myHrp then return false end
+    
+    local dist = (myHrp.Position - hrp.Position).Magnitude
+    return dist <= Settings.MaxAimDistance
+end
+
+-- =====================================================
+-- === TEAMCHECK ЛОГИКА ===
+-- =====================================================
+local function IsTeammate(player)
+    if not Settings.TeamCheck then return false end
+    if not player then return false end
+    
+    if ManualTeammates[player.Name] then return true end
+    if ManualEnemies[player.Name] then return false end
+    if IsStandardTeammate(player) then return true end
+    
+    if Settings.AdaptiveTeamCheck and KnownTeammates[player.Name] then
+        return true
+    end
+    
+    return false
+end
+
+local function CanAttack(player)
+    if player == LocalPlayer then return false end
+    if IsIgnored(player.Name) then return false end
+    if ManualEnemies[player.Name] then return true end
+    if ManualTeammates[player.Name] then return false end
+    if IsStandardTeammate(player) then return false end
+    
+    if Settings.AdaptiveTeamCheck and not IsTracked(player.Name) then
+        return true
+    end
+    
+    if IsTeammate(player) then return false end
+    
+    return true
+end
+
+-- =====================================================
+-- === АДАПТИВНАЯ ПРОВЕРКА ===
+-- =====================================================
 local function RegisterShot(targetName, wasAimed, wasVisible)
     for i = #PendingShots, 1, -1 do
         if PendingShots[i].Target == targetName then
@@ -125,13 +246,13 @@ local function RegisterShot(targetName, wasAimed, wasVisible)
     end
     
     if ManualEnemies[targetName] then
-        print("[TEAM] ❌ " .. targetName .. " — в ручном списке ВРАГОВ")
+        print("[TEAM] ❌ " .. targetName .. " — ручной ВРАГ")
         KnownEnemies[targetName] = true
         return
     end
     
     if ManualTeammates[targetName] then
-        print("[TEAM] 🛡️ " .. targetName .. " — в ручном списке СВОИХ")
+        print("[TEAM] 🛡️ " .. targetName .. " — ручной СВОЙ")
         KnownTeammates[targetName] = true
         return
     end
@@ -210,7 +331,7 @@ local function RegisterShot(targetName, wasAimed, wasVisible)
                 elseif isStdTeammate then
                     KnownTeammates[targetName] = true
                     KnownEnemies[targetName] = nil
-                    print("[TEAM] 🛡️ " .. targetName .. " = СВОЙ (стандартный тиммейт)")
+                    print("[TEAM] 🛡️ " .. targetName .. " = СВОЙ (стандартный)")
                 elseif isGone then
                     print("[TEAM] ⚠️ " .. targetName .. " вышел")
                 elseif isEnemy then
@@ -272,70 +393,8 @@ local function StartHealthTracking()
 end
 
 -- =====================================================
--- === ПРОВЕРКА СВОИХ ===
--- =====================================================
-local function IsTeammate(player)
-    if not Settings.TeamCheck then return false end
-    if not player then return false end
-    
-    if ManualTeammates[player.Name] then return true end
-    if ManualEnemies[player.Name] then return false end
-    if IsStandardTeammate(player) then return true end
-    
-    if Settings.AdaptiveTeamCheck and KnownTeammates[player.Name] then
-        return true
-    end
-    
-    return false
-end
-
--- =====================================================
--- === ИГНОР-ЛИСТ ===
--- =====================================================
-local function IsIgnored(playerName)
-    if not IgnoreListEnabled then return false end
-    for _, name in ipairs(IgnoreList) do
-        if name:lower() == playerName:lower() then
-            return true
-        end
-    end
-    return false
-end
-
-local function CanAttack(player)
-    if player == LocalPlayer then return false end
-    if IsIgnored(player.Name) then return false end
-    if ManualEnemies[player.Name] then return true end
-    if ManualTeammates[player.Name] then return false end
-    if IsStandardTeammate(player) then return false end
-    
-    if Settings.AdaptiveTeamCheck and not IsTracked(player.Name) then
-        return true
-    end
-    
-    if IsTeammate(player) then return false end
-    
-    return true
-end
-
-local function IsWithinDistance(hrp)
-    if not LocalPlayer.Character then return false end
-    local myHrp = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-    if not myHrp then return false end
-    
-    local dist = (myHrp.Position - hrp.Position).Magnitude
-    return dist <= Settings.MaxAimDistance
-end
-
--- =====================================================
 -- === ESP ===
 -- =====================================================
-local ESPEnabled = false
-local ESPConnection = nil
-local ESPObjects = {}
-local ESP_MAX_DISTANCE = 300
-local LastESPUpdate = 0
-
 local function ClearESP()
     for _, obj in ipairs(ESPObjects) do
         pcall(function() 
@@ -481,14 +540,8 @@ local function CheckNewPlayers()
 end
 
 -- =====================================================
--- === ПОЛЕТ (СКОРОСТЬ ИЗ НАСТРОЕК) ===
+-- === ПОЛЕТ ===
 -- =====================================================
-local FlyEnabled = false
-local FlyConnection = nil
-local NoclipConnection = nil
-local BodyVelocity = nil
-local BodyGyro = nil
-
 local function StartFly()
     if FlyEnabled then return end
     if not LocalPlayer.Character then return end
@@ -605,35 +658,6 @@ end
 -- =====================================================
 -- === ТРИГГЕРБОТ ===
 -- =====================================================
-local function IsAlive(char)
-    if not char then return false end
-    local humanoid = char:FindFirstChild("Humanoid")
-    if not humanoid then return false end
-    if humanoid.Health <= 0 then return false end
-    return true
-end
-
-local function IsVisible(part)
-    if not part or not LocalPlayer.Character then return false end
-    local origin = LocalPlayer.Character:FindFirstChild("Head")
-    if not origin then return false end
-    
-    local params = RaycastParams.new()
-    params.FilterType = Enum.RaycastFilterType.Blacklist
-    params.FilterDescendantsInstances = {LocalPlayer.Character, Camera}
-    
-    local result = Workspace:Raycast(origin.Position, (part.Position - origin.Position).Unit * (origin.Position - part.Position).Magnitude, params)
-    
-    if not result then return true end
-    
-    local hit = result.Instance
-    if hit then
-        local player = Players:GetPlayerFromCharacter(hit.Parent)
-        if player then return true end
-    end
-    return false
-end
-
 local function GetTarget()
     if not LocalPlayer.Character then return nil end
     
@@ -806,16 +830,6 @@ local function MainLoop()
     end
 end
 
--- =====================================================
--- === ЗАПУСК/ОСТАНОВКА ===
--- =====================================================
-local ScriptRunning = true
-local MainConnection = nil
-local SettingsOpen = false
-local SettingsPanel = nil
-local GUI = nil
-local PlayerPickerPanel = nil
-
 local function StartLoop()
     if MainConnection then MainConnection:Disconnect(); MainConnection = nil end
     MainConnection = RunService.RenderStepped:Connect(function()
@@ -828,7 +842,7 @@ local function StopLoop()
 end
 
 -- =====================================================
--- === F10 МЕНЮ - ВЫБОР ТИММЕЙТОВ/ВРАГОВ ===
+-- === F10 МЕНЮ ===
 -- =====================================================
 local function CreatePlayerPicker()
     pcall(function()
@@ -1019,10 +1033,10 @@ local function CreatePlayerPicker()
         card.MouseButton1Click:Connect(function()
             if isTeam then
                 ManualTeammates[player.Name] = nil
-                print("[PICKER] " .. player.DisplayName .. " (@" .. player.Name .. ") убран из СВОИХ")
+                print("[PICKER] " .. player.DisplayName .. " убран из СВОИХ")
             else
                 ManualEnemies[player.Name] = nil
-                print("[PICKER] " .. player.DisplayName .. " (@" .. player.Name .. ") убран из ВРАГОВ")
+                print("[PICKER] " .. player.DisplayName .. " убран из ВРАГОВ")
             end
             if PlayerPickerPanel and PlayerPickerPanel.Refresh then
                 PlayerPickerPanel.Refresh()
@@ -1119,7 +1133,7 @@ local function CreatePlayerPicker()
         TeamBtn.MouseButton1Click:Connect(function()
             ManualTeammates[player.Name] = true
             ManualEnemies[player.Name] = nil
-            print("[PICKER] 🛡️ " .. player.DisplayName .. " (@" .. player.Name .. ") → СВОИ")
+            print("[PICKER] 🛡️ " .. player.DisplayName .. " → СВОИ")
             if PlayerPickerPanel and PlayerPickerPanel.Refresh then
                 PlayerPickerPanel.Refresh()
             end
@@ -1128,7 +1142,7 @@ local function CreatePlayerPicker()
         EnemyBtn.MouseButton1Click:Connect(function()
             ManualEnemies[player.Name] = true
             ManualTeammates[player.Name] = nil
-            print("[PICKER] ❌ " .. player.DisplayName .. " (@" .. player.Name .. ") → ВРАГИ")
+            print("[PICKER] ❌ " .. player.DisplayName .. " → ВРАГИ")
             if PlayerPickerPanel and PlayerPickerPanel.Refresh then
                 PlayerPickerPanel.Refresh()
             end
@@ -1276,19 +1290,6 @@ local function CreatePlayerPicker()
 end
 
 -- =====================================================
--- === РУЧНОЕ УПРАВЛЕНИЕ ===
--- =====================================================
-local function ResetTeams()
-    KnownEnemies = {}
-    KnownTeammates = {}
-    PendingShots = {}
-    LastCheckShot = {}
-    ManualEnemies = {}
-    ManualTeammates = {}
-    print("[TEAM] 🔄 Все списки сброшены")
-end
-
--- =====================================================
 -- === ПАНЕЛЬ НАСТРОЕК ===
 -- =====================================================
 local function CreateSettingsPanel()
@@ -1402,7 +1403,6 @@ local function CreateSettingsPanel()
         function() return Settings.MaxAimDistance end, function(v) Settings.MaxAimDistance = v end, "%.0f")
     CreateSlider(235, "Смещение прицела", 0, 5,
         function() return Settings.AimOffset end, function(v) Settings.AimOffset = v end, "%.1f")
-    -- ✅ НОВЫЙ СЛАЙДЕР: Скорость полета
     CreateSlider(275, "Скорость полета", 5, 100,
         function() return Settings.FlySpeed end, function(v) Settings.FlySpeed = v end, "%.0f")
     
@@ -1703,35 +1703,35 @@ local function CreateMainMenu()
 end
 
 -- =====================================================
--- === ФУНКЦИИ ПЕРЕКЛЮЧЕНИЯ ===
+-- === ФУНКЦИИ ПЕРЕКЛЮЧЕНИЯ (ОПРЕДЕЛЯЕМ ЗДЕСЬ) ===
 -- =====================================================
-local function ToggleSettings()
+function ToggleSettings()
     if not ScriptRunning then return end
     if SettingsPanel then SettingsPanel.Toggle() end
 end
 
-local function ToggleTrigger()
+function ToggleTrigger()
     if not ScriptRunning then return end
     Settings.TriggerBot = not Settings.TriggerBot
     if GUI and GUI.Update then GUI.Update() end
     print("[XENO] TriggerBot:", Settings.TriggerBot and "ON" or "OFF")
 end
 
-local function ToggleWall()
+function ToggleWall()
     if not ScriptRunning then return end
     Settings.WallCheck = not Settings.WallCheck
     if GUI and GUI.Update then GUI.Update() end
     print("[XENO] WallCheck:", Settings.WallCheck and "ON" or "OFF")
 end
 
-local function ToggleAim()
+function ToggleAim()
     if not ScriptRunning then return end
     Settings.AimAssist = not Settings.AimAssist
     if GUI and GUI.Update then GUI.Update() end
     print("[XENO] AimAssist:", Settings.AimAssist and "ON" or "OFF")
 end
 
-local function ToggleIgnoreList()
+function ToggleIgnoreList()
     if not ScriptRunning then return end
     IgnoreListEnabled = not IgnoreListEnabled
     if GUI and GUI.Update then GUI.Update() end
@@ -1739,13 +1739,13 @@ local function ToggleIgnoreList()
     print("[XENO] Игнор-лист:", IgnoreListEnabled and "ВКЛ" or "ВЫКЛ")
 end
 
-local function ToggleFly()
+function ToggleFly()
     if not ScriptRunning then return end
     if FlyEnabled then StopFly() else StartFly() end
     if GUI and GUI.Update then GUI.Update() end
 end
 
-local function ToggleESP()
+function ToggleESP()
     if not ScriptRunning then return end
     ESPEnabled = not ESPEnabled
     
@@ -1766,7 +1766,17 @@ local function ToggleESP()
     if GUI and GUI.Update then GUI.Update() end
 end
 
-local function DeleteScript()
+function ResetTeams()
+    KnownEnemies = {}
+    KnownTeammates = {}
+    PendingShots = {}
+    LastCheckShot = {}
+    ManualEnemies = {}
+    ManualTeammates = {}
+    print("[TEAM] 🔄 Все списки сброшены")
+end
+
+function DeleteScript()
     print("[XENO] Скрипт удален")
     ScriptRunning = false
     if FlyEnabled then StopFly() end
@@ -1783,10 +1793,20 @@ local function DeleteScript()
 end
 
 -- =====================================================
--- === СОХРАНЕНИЕ ПРИ СБРОСЕ ПЕРСОНАЖА ===
+-- === СОЗДАНИЕ И ЗАПУСК ===
+-- =====================================================
+SettingsPanel = CreateSettingsPanel()
+GUI = CreateMainMenu()
+PlayerPickerPanel = CreatePlayerPicker()
+
+StartHealthTracking()
+StartLoop()
+
+-- =====================================================
+-- === СОБЫТИЯ ===
 -- =====================================================
 LocalPlayer.CharacterAdded:Connect(function()
-    print("[TEAM] 🔄 Персонаж перезагружен, списки сохранены")
+    print("[TEAM] 🔄 Персонаж перезагружен")
     task.wait(1)
     if PlayerPickerPanel and PlayerPickerPanel.Refresh then
         PlayerPickerPanel.Refresh()
@@ -1807,15 +1827,6 @@ Players.PlayerAdded:Connect(function(player)
         PlayerPickerPanel.Refresh()
     end
 end)
-
--- =====================================================
--- === СОЗДАНИЕ И ЗАПУСК ===
--- =====================================================
-SettingsPanel = CreateSettingsPanel()
-GUI = CreateMainMenu()
-PlayerPickerPanel = CreatePlayerPicker()
-
-StartHealthTracking()
 
 -- =====================================================
 -- === КЛАВИШИ ===
@@ -1870,22 +1881,16 @@ RunService.Heartbeat:Connect(function()
     end
 end)
 
-StartLoop()
-
 print("====================================================")
-print("🔫 TRIGGERBOT ДЛЯ XENO (АДАПТИВНЫЙ TEAMCHECK v12)")
+print("🔫 TRIGGERBOT ДЛЯ XENO (v13)")
 print("====================================================")
 print("📢 F1 - Триггер бот")
 print("📢 F2 - ESP (ВХ)")
 print("📢 F3 - Игнор-лист")
-print("📢 F4 - Полет (скорость из настроек)")
+print("📢 F4 - Полет")
 print("📢 F5 - Доводка")
 print("📢 F6 - WallCheck")
-print("📢 F10 - 👥 МЕНЮ ВЫБОРА ИГРОКОВ")
+print("📢 F10 - МЕНЮ ВЫБОРА ИГРОКОВ")
 print("📢 Insert - Настройки")
 print("📢 Delete - Удалить")
-print("====================================================")
-print("👤 ВАЙТЛИСТ: Dimalruw83, PikaScher, swat228456")
-print("🎭 F10: DisplayName (жёлтый) + @username (серый)")
-print("⚙️ В настройках: Скорость полета (5-100)")
 print("====================================================")
