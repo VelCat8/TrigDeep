@@ -1,6 +1,7 @@
 -- =====================================================
--- 🔫 TRIGGERBOT ДЛЯ XENO (АДАПТИВНЫЙ TEAMCHECK v7)
--- Приоритет стандартных тиммейтов | 5 сек проверка
+-- 🔫 TRIGGERBOT ДЛЯ XENO (АДАПТИВНЫЙ TEAMCHECK v11)
+-- Отображение DisplayName + @username в F10 меню
+-- Скорость полета: 30 | Прицел: 1.8
 -- =====================================================
 
 local Players = game:GetService("Players")
@@ -30,6 +31,7 @@ local Settings = {
     CheckShotCooldown = 5,
     AimPrecision = 20,
     AdaptiveWallCheck = true,
+    AimOffset = 1.8,
 }
 
 -- =====================================================
@@ -43,6 +45,12 @@ local IgnoreList = {
 local IgnoreListEnabled = true
 
 -- =====================================================
+-- === РУЧНЫЕ СПИСКИ (ЧЕРЕЗ F10) ===
+-- =====================================================
+local ManualTeammates = {}
+local ManualEnemies = {}
+
+-- =====================================================
 -- === АДАПТИВНЫЙ TEAMCHECK ===
 -- =====================================================
 local KnownEnemies = {}
@@ -52,10 +60,9 @@ local LastHealthCache = {}
 local LastCheckShot = {}
 
 local function IsTracked(name)
-    return KnownEnemies[name] or KnownTeammates[name]
+    return KnownEnemies[name] or KnownTeammates[name] or ManualEnemies[name] or ManualTeammates[name]
 end
 
--- ✅ Проверка: стандартный тиммейт через команду Roblox
 local function IsStandardTeammate(player)
     if not player then return false end
     if not LocalPlayer.Team then return false end
@@ -63,7 +70,6 @@ local function IsStandardTeammate(player)
     return false
 end
 
--- ✅ WallCheck для адаптивного TeamCheck
 local function IsVisibleForAdaptive(targetPart)
     if not Settings.AdaptiveWallCheck then return true end
     if not targetPart or not LocalPlayer.Character then return false end
@@ -108,19 +114,28 @@ local function RegisterShot(targetName, wasAimed, wasVisible)
         end
     end
     
-    -- ✅ Промах - не проверяем
     if not wasAimed then
         print("[TEAM] 🎯 Промах по " .. targetName)
         return
     end
     
-    -- ✅ За стеной - не проверяем
     if not wasVisible then
         print("[TEAM] 🧱 " .. targetName .. " за стеной")
         return
     end
     
-    -- ✅ ПРИОРИТЕТ: стандартный тиммейт - НЕ проверяем, записываем в свои
+    if ManualEnemies[targetName] then
+        print("[TEAM] ❌ " .. targetName .. " — в ручном списке ВРАГОВ")
+        KnownEnemies[targetName] = true
+        return
+    end
+    
+    if ManualTeammates[targetName] then
+        print("[TEAM] 🛡️ " .. targetName .. " — в ручном списке СВОИХ")
+        KnownTeammates[targetName] = true
+        return
+    end
+    
     local targetPlayer = Players:FindFirstChild(targetName)
     if IsStandardTeammate(targetPlayer) then
         print("[TEAM] 🛡️ " .. targetName .. " — стандартный тиммейт")
@@ -129,7 +144,6 @@ local function RegisterShot(targetName, wasAimed, wasVisible)
         return
     end
     
-    -- ✅ Уже известен как СВОЙ - не проверяем повторно
     if KnownTeammates[targetName] then
         print("[TEAM] 🛡️ " .. targetName .. " уже СВОЙ")
         return
@@ -151,7 +165,6 @@ local function RegisterShot(targetName, wasAimed, wasVisible)
     
     print("[TEAM] ✅ Проверка: " .. targetName)
     
-    -- ✅ Проверка через 5 секунд
     task.delay(5, function()
         for i, shot in ipairs(PendingShots) do
             if shot.Target == targetName and tick() - shot.Time >= 4.9 then
@@ -160,11 +173,12 @@ local function RegisterShot(targetName, wasAimed, wasVisible)
                 local isDead = false
                 local isGone = false
                 local isStdTeammate = false
+                local isManualTeam = false
+                local isManualEnemy = false
                 
-                -- ✅ Приоритет стандартной команды
-                if IsStandardTeammate(p) then
-                    isStdTeammate = true
-                end
+                if IsStandardTeammate(p) then isStdTeammate = true end
+                if ManualTeammates[targetName] then isManualTeam = true end
+                if ManualEnemies[targetName] then isManualEnemy = true end
                 
                 if p and p.Character then
                     local humanoid = p.Character:FindFirstChild("Humanoid")
@@ -185,8 +199,15 @@ local function RegisterShot(targetName, wasAimed, wasVisible)
                     isGone = true
                 end
                 
-                -- ✅ Стандартный тиммейт - всегда СВОЙ (даже если убит)
-                if isStdTeammate then
+                if isManualEnemy then
+                    KnownEnemies[targetName] = true
+                    KnownTeammates[targetName] = nil
+                    print("[TEAM] ❌ " .. targetName .. " = ВРАГ (ручной список)")
+                elseif isManualTeam then
+                    KnownTeammates[targetName] = true
+                    KnownEnemies[targetName] = nil
+                    print("[TEAM] 🛡️ " .. targetName .. " = СВОЙ (ручной список)")
+                elseif isStdTeammate then
                     KnownTeammates[targetName] = true
                     KnownEnemies[targetName] = nil
                     print("[TEAM] 🛡️ " .. targetName .. " = СВОЙ (стандартный тиммейт)")
@@ -231,8 +252,7 @@ local function StartHealthTracking()
                 local lastHP = LastHealthCache[player.Name]
                 
                 if lastHP and currentHP < lastHP - 0.5 then
-                    -- ✅ Стандартного тиммейта не записываем в враги
-                    if not IsStandardTeammate(player) then
+                    if not IsStandardTeammate(player) and not ManualTeammates[player.Name] and not ManualEnemies[player.Name] then
                         for i, shot in ipairs(PendingShots) do
                             if shot.Target == player.Name then
                                 KnownEnemies[player.Name] = true
@@ -258,10 +278,10 @@ local function IsTeammate(player)
     if not Settings.TeamCheck then return false end
     if not player then return false end
     
-    -- ✅ Приоритет: стандартная команда
+    if ManualTeammates[player.Name] then return true end
+    if ManualEnemies[player.Name] then return false end
     if IsStandardTeammate(player) then return true end
     
-    -- Адаптивный список
     if Settings.AdaptiveTeamCheck and KnownTeammates[player.Name] then
         return true
     end
@@ -285,8 +305,8 @@ end
 local function CanAttack(player)
     if player == LocalPlayer then return false end
     if IsIgnored(player.Name) then return false end
-    
-    -- ✅ Стандартный тиммейт - никогда не атакуем
+    if ManualEnemies[player.Name] then return true end
+    if ManualTeammates[player.Name] then return false end
     if IsStandardTeammate(player) then return false end
     
     if Settings.AdaptiveTeamCheck and not IsTracked(player.Name) then
@@ -352,8 +372,11 @@ local function CreateESP()
         
         local boxColor = Color3.fromRGB(255, 255, 255)
         
-        -- ✅ Приоритет: стандартный тиммейт = зелёный
-        if IsStandardTeammate(player) then
+        if ManualEnemies[player.Name] then
+            boxColor = Color3.fromRGB(255, 0, 0)
+        elseif ManualTeammates[player.Name] then
+            boxColor = Color3.fromRGB(0, 255, 0)
+        elseif IsStandardTeammate(player) then
             boxColor = Color3.fromRGB(0, 255, 0)
         elseif KnownEnemies[player.Name] then
             boxColor = Color3.fromRGB(255, 0, 0)
@@ -458,10 +481,10 @@ local function CheckNewPlayers()
 end
 
 -- =====================================================
--- === ПОЛЕТ (СКОРОСТЬ 17) ===
+-- === ПОЛЕТ (СКОРОСТЬ 30) ===
 -- =====================================================
 local FlyEnabled = false
-local FlySpeed = 17
+local FlySpeed = 30
 local FlyConnection = nil
 local NoclipConnection = nil
 local BodyVelocity = nil
@@ -634,7 +657,7 @@ local function GetTarget()
         
         if not IsWithinDistance(part) then continue end
         
-        local aimPos = part.Position + Vector3.new(0, 2.2, 0)
+        local aimPos = part.Position + Vector3.new(0, Settings.AimOffset, 0)
         local pos, onScreen = Camera:WorldToViewportPoint(aimPos)
         if not onScreen then continue end
         
@@ -673,7 +696,7 @@ local function IsOnTarget()
         
         local head = char:FindFirstChild("Head")
         if head and IsWithinDistance(head) then
-            local aimPos = head.Position + Vector3.new(0, 2.2, 0)
+            local aimPos = head.Position + Vector3.new(0, Settings.AimOffset, 0)
             local pos, onScreen = Camera:WorldToViewportPoint(aimPos)
             if onScreen then
                 local dist = (Vector2.new(pos.X, pos.Y) - center).Magnitude
@@ -687,7 +710,7 @@ local function IsOnTarget()
         
         local hrp = char:FindFirstChild("HumanoidRootPart")
         if hrp and IsWithinDistance(hrp) then
-            local aimPos = hrp.Position + Vector3.new(0, 2.2, 0)
+            local aimPos = hrp.Position + Vector3.new(0, Settings.AimOffset, 0)
             local pos, onScreen = Camera:WorldToViewportPoint(aimPos)
             if onScreen then
                 local dist = (Vector2.new(pos.X, pos.Y) - center).Magnitude
@@ -710,7 +733,7 @@ local function WasAimedAtTarget(targetPlayer)
     
     local head = char:FindFirstChild("Head")
     if head and IsWithinDistance(head) then
-        local aimPos = head.Position + Vector3.new(0, 2.2, 0)
+        local aimPos = head.Position + Vector3.new(0, Settings.AimOffset, 0)
         local pos, onScreen = Camera:WorldToViewportPoint(aimPos)
         if onScreen then
             local dist = (Vector2.new(pos.X, pos.Y) - center).Magnitude
@@ -722,7 +745,7 @@ local function WasAimedAtTarget(targetPlayer)
     
     local hrp = char:FindFirstChild("HumanoidRootPart")
     if hrp and IsWithinDistance(hrp) then
-        local aimPos = hrp.Position + Vector3.new(0, 2.2, 0)
+        local aimPos = hrp.Position + Vector3.new(0, Settings.AimOffset, 0)
         local pos, onScreen = Camera:WorldToViewportPoint(aimPos)
         if onScreen then
             local dist = (Vector2.new(pos.X, pos.Y) - center).Magnitude
@@ -742,12 +765,8 @@ local function WasVisibleForAdaptive(targetPlayer)
     local head = char:FindFirstChild("Head")
     local hrp = char:FindFirstChild("HumanoidRootPart")
     
-    if head and IsVisibleForAdaptive(head) then
-        return true
-    end
-    if hrp and IsVisibleForAdaptive(hrp) then
-        return true
-    end
+    if head and IsVisibleForAdaptive(head) then return true end
+    if hrp and IsVisibleForAdaptive(hrp) then return true end
     
     return false
 end
@@ -761,8 +780,11 @@ local function MainLoop()
     local isTargeting, targetPlayer = IsOnTarget()
     if isTargeting and tick() - LastShot > Settings.ShotDelay then
         if targetPlayer then
-            -- ✅ Стандартный тиммейт - автоматически в свои
-            if IsStandardTeammate(targetPlayer) then
+            if ManualEnemies[targetPlayer.Name] then
+                -- Ручной враг
+            elseif ManualTeammates[targetPlayer.Name] then
+                -- Ручной тиммейт
+            elseif IsStandardTeammate(targetPlayer) then
                 KnownTeammates[targetPlayer.Name] = true
                 KnownEnemies[targetPlayer.Name] = nil
             elseif Settings.AdaptiveTeamCheck and not IsTracked(targetPlayer.Name) then
@@ -793,6 +815,7 @@ local MainConnection = nil
 local SettingsOpen = false
 local SettingsPanel = nil
 local GUI = nil
+local PlayerPickerPanel = nil
 
 local function StartLoop()
     if MainConnection then MainConnection:Disconnect(); MainConnection = nil end
@@ -806,26 +829,476 @@ local function StopLoop()
 end
 
 -- =====================================================
--- === РУЧНОЕ УПРАВЛЕНИЕ СПИСКАМИ ===
+-- === F10 МЕНЮ - ВЫБОР ТИММЕЙТОВ/ВРАГОВ ===
 -- =====================================================
-local function AddEnemyManually(name)
-    KnownEnemies[name] = true
-    KnownTeammates[name] = nil
-    print("[TEAM] ❌ " .. name .. " добавлен в ВРАГИ")
+local function CreatePlayerPicker()
+    pcall(function()
+        if LocalPlayer.PlayerGui:FindFirstChild("PlayerPickerPanel") then
+            LocalPlayer.PlayerGui.PlayerPickerPanel:Destroy()
+        end
+    end)
+    
+    local ScreenGui = Instance.new("ScreenGui")
+    ScreenGui.Name = "PlayerPickerPanel"
+    ScreenGui.Parent = LocalPlayer.PlayerGui
+    ScreenGui.ResetOnSpawn = false
+    ScreenGui.DisplayOrder = 1100
+    
+    local MainFrame = Instance.new("Frame")
+    MainFrame.Size = UDim2.new(0, 850, 0, 450)
+    MainFrame.Position = UDim2.new(0.5, -425, 0.5, -225)
+    MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+    MainFrame.BorderColor3 = Color3.fromRGB(60, 60, 60)
+    MainFrame.BorderSizePixel = 1
+    MainFrame.Visible = false
+    MainFrame.Parent = ScreenGui
+    Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 10)
+    
+    local Title = Instance.new("TextLabel")
+    Title.Size = UDim2.new(1, 0, 0, 35)
+    Title.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+    Title.BorderSizePixel = 0
+    Title.Text = "👥 ВЫБОР ТИММЕЙТОВ / ВРАГОВ [F10]"
+    Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+    Title.TextSize = 16
+    Title.Font = Enum.Font.GothamBold
+    Title.Parent = MainFrame
+    Instance.new("UICorner", Title).CornerRadius = UDim.new(0, 10)
+    
+    -- ЛЕВАЯ: СВОИ
+    local TeamFrame = Instance.new("Frame")
+    TeamFrame.Size = UDim2.new(0.31, -10, 1, -110)
+    TeamFrame.Position = UDim2.new(0, 10, 0, 70)
+    TeamFrame.BackgroundColor3 = Color3.fromRGB(15, 25, 15)
+    TeamFrame.BorderColor3 = Color3.fromRGB(0, 200, 0)
+    TeamFrame.BorderSizePixel = 1
+    TeamFrame.Parent = MainFrame
+    Instance.new("UICorner", TeamFrame).CornerRadius = UDim.new(0, 8)
+    
+    local TeamTitle = Instance.new("TextLabel")
+    TeamTitle.Size = UDim2.new(1, 0, 0, 30)
+    TeamTitle.BackgroundColor3 = Color3.fromRGB(0, 80, 0)
+    TeamTitle.Text = "🛡️ СВОИ (0)"
+    TeamTitle.TextColor3 = Color3.fromRGB(0, 255, 0)
+    TeamTitle.TextSize = 14
+    TeamTitle.Font = Enum.Font.GothamBold
+    TeamTitle.Parent = TeamFrame
+    Instance.new("UICorner", TeamTitle).CornerRadius = UDim.new(0, 8)
+    
+    local TeamScroll = Instance.new("ScrollingFrame")
+    TeamScroll.Size = UDim2.new(1, -10, 1, -40)
+    TeamScroll.Position = UDim2.new(0, 5, 0, 35)
+    TeamScroll.BackgroundTransparency = 1
+    TeamScroll.BorderSizePixel = 0
+    TeamScroll.ScrollBarThickness = 6
+    TeamScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+    TeamScroll.Parent = TeamFrame
+    
+    local TeamLayout = Instance.new("UIListLayout")
+    TeamLayout.Padding = UDim.new(0, 4)
+    TeamLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    TeamLayout.Parent = TeamScroll
+    
+    -- ЦЕНТР: ВСЕ ИГРОКИ
+    local AllFrame = Instance.new("Frame")
+    AllFrame.Size = UDim2.new(0.34, -10, 1, -110)
+    AllFrame.Position = UDim2.new(0.33, 0, 0, 70)
+    AllFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 35)
+    AllFrame.BorderColor3 = Color3.fromRGB(100, 100, 200)
+    AllFrame.BorderSizePixel = 1
+    AllFrame.Parent = MainFrame
+    Instance.new("UICorner", AllFrame).CornerRadius = UDim.new(0, 8)
+    
+    local AllTitle = Instance.new("TextLabel")
+    AllTitle.Size = UDim2.new(1, 0, 0, 30)
+    AllTitle.BackgroundColor3 = Color3.fromRGB(40, 40, 80)
+    AllTitle.Text = "👥 ВСЕ ИГРОКИ"
+    AllTitle.TextColor3 = Color3.fromRGB(150, 150, 255)
+    AllTitle.TextSize = 14
+    AllTitle.Font = Enum.Font.GothamBold
+    AllTitle.Parent = AllFrame
+    Instance.new("UICorner", AllTitle).CornerRadius = UDim.new(0, 8)
+    
+    local AllScroll = Instance.new("ScrollingFrame")
+    AllScroll.Size = UDim2.new(1, -10, 1, -40)
+    AllScroll.Position = UDim2.new(0, 5, 0, 35)
+    AllScroll.BackgroundTransparency = 1
+    AllScroll.BorderSizePixel = 0
+    AllScroll.ScrollBarThickness = 6
+    AllScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+    AllScroll.Parent = AllFrame
+    
+    local AllLayout = Instance.new("UIListLayout")
+    AllLayout.Padding = UDim.new(0, 4)
+    AllLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    AllLayout.Parent = AllScroll
+    
+    -- ПРАВАЯ: ВРАГИ
+    local EnemyFrame = Instance.new("Frame")
+    EnemyFrame.Size = UDim2.new(0.31, -10, 1, -110)
+    EnemyFrame.Position = UDim2.new(0.69, 0, 0, 70)
+    EnemyFrame.BackgroundColor3 = Color3.fromRGB(25, 15, 15)
+    EnemyFrame.BorderColor3 = Color3.fromRGB(200, 0, 0)
+    EnemyFrame.BorderSizePixel = 1
+    EnemyFrame.Parent = MainFrame
+    Instance.new("UICorner", EnemyFrame).CornerRadius = UDim.new(0, 8)
+    
+    local EnemyTitle = Instance.new("TextLabel")
+    EnemyTitle.Size = UDim2.new(1, 0, 0, 30)
+    EnemyTitle.BackgroundColor3 = Color3.fromRGB(80, 0, 0)
+    EnemyTitle.Text = "❌ ВРАГИ (0)"
+    EnemyTitle.TextColor3 = Color3.fromRGB(255, 80, 80)
+    EnemyTitle.TextSize = 14
+    EnemyTitle.Font = Enum.Font.GothamBold
+    EnemyTitle.Parent = EnemyFrame
+    Instance.new("UICorner", EnemyTitle).CornerRadius = UDim.new(0, 8)
+    
+    local EnemyScroll = Instance.new("ScrollingFrame")
+    EnemyScroll.Size = UDim2.new(1, -10, 1, -40)
+    EnemyScroll.Position = UDim2.new(0, 5, 0, 35)
+    EnemyScroll.BackgroundTransparency = 1
+    EnemyScroll.BorderSizePixel = 0
+    EnemyScroll.ScrollBarThickness = 6
+    EnemyScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+    EnemyScroll.Parent = EnemyFrame
+    
+    local EnemyLayout = Instance.new("UIListLayout")
+    EnemyLayout.Padding = UDim.new(0, 4)
+    EnemyLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    EnemyLayout.Parent = EnemyScroll
+    
+    -- ✅ ФУНКЦИЯ СОЗДАНИЯ КАРТОЧКИ ДЛЯ СПИСКА
+    local function CreateTeamCard(player, parentFrame, isTeam)
+        local card = Instance.new("TextButton")
+        card.Size = UDim2.new(1, -5, 0, 50)
+        card.BackgroundColor3 = isTeam and Color3.fromRGB(0, 60, 0) or Color3.fromRGB(60, 0, 0)
+        card.Text = ""
+        card.Parent = parentFrame
+        Instance.new("UICorner", card).CornerRadius = UDim.new(0, 6)
+        
+        -- DisplayName (отображаемое имя)
+        local displayLabel = Instance.new("TextLabel")
+        displayLabel.Size = UDim2.new(1, -10, 0, 18)
+        displayLabel.Position = UDim2.new(0, 5, 0, 2)
+        displayLabel.BackgroundTransparency = 1
+        displayLabel.Text = "🎭 " .. player.DisplayName
+        displayLabel.TextColor3 = Color3.fromRGB(255, 255, 100)
+        displayLabel.TextSize = 12
+        displayLabel.Font = Enum.Font.GothamBold
+        displayLabel.TextXAlignment = Enum.TextXAlignment.Left
+        displayLabel.TextTruncate = Enum.TextTruncate.AtEnd
+        displayLabel.Parent = card
+        
+        -- @username (реальный ник)
+        local usernameLabel = Instance.new("TextLabel")
+        usernameLabel.Size = UDim2.new(1, -10, 0, 14)
+        usernameLabel.Position = UDim2.new(0, 5, 0, 20)
+        usernameLabel.BackgroundTransparency = 1
+        usernameLabel.Text = "@" .. player.Name
+        usernameLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
+        usernameLabel.TextSize = 10
+        usernameLabel.Font = Enum.Font.Gotham
+        usernameLabel.TextXAlignment = Enum.TextXAlignment.Left
+        usernameLabel.TextTruncate = Enum.TextTruncate.AtEnd
+        usernameLabel.Parent = card
+        
+        -- HP
+        local infoLabel = Instance.new("TextLabel")
+        infoLabel.Size = UDim2.new(1, -10, 0, 12)
+        infoLabel.Position = UDim2.new(0, 5, 0, 35)
+        infoLabel.BackgroundTransparency = 1
+        
+        local hpText = "?"
+        local char = player.Character
+        if char then
+            local humanoid = char:FindFirstChild("Humanoid")
+            if humanoid then
+                hpText = math.floor(humanoid.Health) .. " HP"
+            end
+        end
+        
+        infoLabel.Text = hpText .. " | клик → убрать"
+        infoLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
+        infoLabel.TextSize = 9
+        infoLabel.Font = Enum.Font.Gotham
+        infoLabel.TextXAlignment = Enum.TextXAlignment.Left
+        infoLabel.Parent = card
+        
+        card.MouseButton1Click:Connect(function()
+            if isTeam then
+                ManualTeammates[player.Name] = nil
+                print("[PICKER] " .. player.DisplayName .. " (@" .. player.Name .. ") убран из СВОИХ")
+            else
+                ManualEnemies[player.Name] = nil
+                print("[PICKER] " .. player.DisplayName .. " (@" .. player.Name .. ") убран из ВРАГОВ")
+            end
+            if PlayerPickerPanel and PlayerPickerPanel.Refresh then
+                PlayerPickerPanel.Refresh()
+            end
+        end)
+        
+        card.MouseEnter:Connect(function()
+            card.BackgroundColor3 = isTeam and Color3.fromRGB(0, 90, 0) or Color3.fromRGB(90, 0, 0)
+        end)
+        card.MouseLeave:Connect(function()
+            card.BackgroundColor3 = isTeam and Color3.fromRGB(0, 60, 0) or Color3.fromRGB(60, 0, 0)
+        end)
+        
+        return card
+    end
+    
+    -- ✅ ФУНКЦИЯ СОЗДАНИЯ КАРТОЧКИ ДЛЯ ВСЕХ ИГРОКОВ
+    local function CreateAllCard(player, parentFrame)
+        local card = Instance.new("Frame")
+        card.Size = UDim2.new(1, -5, 0, 70)
+        card.BackgroundColor3 = Color3.fromRGB(30, 30, 45)
+        card.Parent = parentFrame
+        Instance.new("UICorner", card).CornerRadius = UDim.new(0, 6)
+        
+        -- DisplayName
+        local displayLabel = Instance.new("TextLabel")
+        displayLabel.Size = UDim2.new(1, -10, 0, 18)
+        displayLabel.Position = UDim2.new(0, 5, 0, 2)
+        displayLabel.BackgroundTransparency = 1
+        displayLabel.Text = "🎭 " .. player.DisplayName
+        displayLabel.TextColor3 = Color3.fromRGB(255, 255, 100)
+        displayLabel.TextSize = 12
+        displayLabel.Font = Enum.Font.GothamBold
+        displayLabel.TextXAlignment = Enum.TextXAlignment.Left
+        displayLabel.TextTruncate = Enum.TextTruncate.AtEnd
+        displayLabel.Parent = card
+        
+        -- @username
+        local usernameLabel = Instance.new("TextLabel")
+        usernameLabel.Size = UDim2.new(1, -10, 0, 14)
+        usernameLabel.Position = UDim2.new(0, 5, 0, 20)
+        usernameLabel.BackgroundTransparency = 1
+        usernameLabel.Text = "@" .. player.Name
+        usernameLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
+        usernameLabel.TextSize = 10
+        usernameLabel.Font = Enum.Font.Gotham
+        usernameLabel.TextXAlignment = Enum.TextXAlignment.Left
+        usernameLabel.TextTruncate = Enum.TextTruncate.AtEnd
+        usernameLabel.Parent = card
+        
+        -- Статус
+        local statusLabel = Instance.new("TextLabel")
+        statusLabel.Size = UDim2.new(1, -10, 0, 12)
+        statusLabel.Position = UDim2.new(0, 5, 0, 36)
+        statusLabel.BackgroundTransparency = 1
+        
+        if ManualTeammates[player.Name] then
+            statusLabel.Text = "🛡️ СВОЙ"
+            statusLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
+        elseif ManualEnemies[player.Name] then
+            statusLabel.Text = "❌ ВРАГ"
+            statusLabel.TextColor3 = Color3.fromRGB(255, 80, 80)
+        elseif IsStandardTeammate(player) then
+            statusLabel.Text = "🛡️ тиммейт (команда)"
+            statusLabel.TextColor3 = Color3.fromRGB(150, 255, 150)
+        else
+            statusLabel.Text = "❔ неизвестно"
+            statusLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
+        end
+        
+        statusLabel.TextSize = 10
+        statusLabel.Font = Enum.Font.Gotham
+        statusLabel.TextXAlignment = Enum.TextXAlignment.Left
+        statusLabel.Parent = card
+        
+        -- Кнопки
+        local TeamBtn = Instance.new("TextButton")
+        TeamBtn.Size = UDim2.new(0.45, -5, 0, 18)
+        TeamBtn.Position = UDim2.new(0, 5, 1, -22)
+        TeamBtn.BackgroundColor3 = Color3.fromRGB(0, 100, 0)
+        TeamBtn.Text = "🛡️ СВОЙ"
+        TeamBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        TeamBtn.TextSize = 10
+        TeamBtn.Font = Enum.Font.GothamBold
+        TeamBtn.Parent = card
+        Instance.new("UICorner", TeamBtn).CornerRadius = UDim.new(0, 4)
+        
+        local EnemyBtn = Instance.new("TextButton")
+        EnemyBtn.Size = UDim2.new(0.45, -5, 0, 18)
+        EnemyBtn.Position = UDim2.new(0.5, 0, 1, -22)
+        EnemyBtn.BackgroundColor3 = Color3.fromRGB(100, 0, 0)
+        EnemyBtn.Text = "❌ ВРАГ"
+        EnemyBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        EnemyBtn.TextSize = 10
+        EnemyBtn.Font = Enum.Font.GothamBold
+        EnemyBtn.Parent = card
+        Instance.new("UICorner", EnemyBtn).CornerRadius = UDim.new(0, 4)
+        
+        TeamBtn.MouseButton1Click:Connect(function()
+            ManualTeammates[player.Name] = true
+            ManualEnemies[player.Name] = nil
+            print("[PICKER] 🛡️ " .. player.DisplayName .. " (@" .. player.Name .. ") → СВОИ")
+            if PlayerPickerPanel and PlayerPickerPanel.Refresh then
+                PlayerPickerPanel.Refresh()
+            end
+        end)
+        
+        EnemyBtn.MouseButton1Click:Connect(function()
+            ManualEnemies[player.Name] = true
+            ManualTeammates[player.Name] = nil
+            print("[PICKER] ❌ " .. player.DisplayName .. " (@" .. player.Name .. ") → ВРАГИ")
+            if PlayerPickerPanel and PlayerPickerPanel.Refresh then
+                PlayerPickerPanel.Refresh()
+            end
+        end)
+        
+        TeamBtn.MouseEnter:Connect(function() TeamBtn.BackgroundColor3 = Color3.fromRGB(0, 150, 0) end)
+        TeamBtn.MouseLeave:Connect(function() TeamBtn.BackgroundColor3 = Color3.fromRGB(0, 100, 0) end)
+        EnemyBtn.MouseEnter:Connect(function() EnemyBtn.BackgroundColor3 = Color3.fromRGB(150, 0, 0) end)
+        EnemyBtn.MouseLeave:Connect(function() EnemyBtn.BackgroundColor3 = Color3.fromRGB(100, 0, 0) end)
+        
+        return card
+    end
+    
+    local function Refresh()
+        for _, child in ipairs(TeamScroll:GetChildren()) do
+            if child:IsA("TextButton") then child:Destroy() end
+        end
+        for _, child in ipairs(EnemyScroll:GetChildren()) do
+            if child:IsA("TextButton") then child:Destroy() end
+        end
+        for _, child in ipairs(AllScroll:GetChildren()) do
+            if child:IsA("Frame") then child:Destroy() end
+        end
+        
+        local teamCount = 0
+        local enemyCount = 0
+        
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player == LocalPlayer then continue end
+            if ManualTeammates[player.Name] then
+                CreateTeamCard(player, TeamScroll, true)
+                teamCount = teamCount + 1
+            end
+        end
+        
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player == LocalPlayer then continue end
+            if ManualEnemies[player.Name] then
+                CreateTeamCard(player, EnemyScroll, false)
+                enemyCount = enemyCount + 1
+            end
+        end
+        
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player == LocalPlayer then continue end
+            CreateAllCard(player, AllScroll)
+        end
+        
+        TeamTitle.Text = "🛡️ СВОИ (" .. teamCount .. ")"
+        EnemyTitle.Text = "❌ ВРАГИ (" .. enemyCount .. ")"
+        AllTitle.Text = "👥 ВСЕ ИГРОКИ (" .. (#Players:GetPlayers() - 1) .. ")"
+        
+        TeamScroll.CanvasSize = UDim2.new(0, 0, 0, teamCount * 60)
+        EnemyScroll.CanvasSize = UDim2.new(0, 0, 0, enemyCount * 60)
+        AllScroll.CanvasSize = UDim2.new(0, 0, 0, (#Players:GetPlayers() - 1) * 75)
+    end
+    
+    local ClearAllBtn = Instance.new("TextButton")
+    ClearAllBtn.Size = UDim2.new(0, 140, 0, 28)
+    ClearAllBtn.Position = UDim2.new(0, 10, 1, -38)
+    ClearAllBtn.BackgroundColor3 = Color3.fromRGB(60, 40, 40)
+    ClearAllBtn.Text = "🗑 ОЧИСТИТЬ ВСЁ"
+    ClearAllBtn.TextColor3 = Color3.fromRGB(255, 200, 200)
+    ClearAllBtn.TextSize = 12
+    ClearAllBtn.Font = Enum.Font.GothamBold
+    ClearAllBtn.Parent = MainFrame
+    Instance.new("UICorner", ClearAllBtn).CornerRadius = UDim.new(0, 6)
+    
+    ClearAllBtn.MouseButton1Click:Connect(function()
+        ManualTeammates = {}
+        ManualEnemies = {}
+        print("[PICKER] Все списки очищены")
+        Refresh()
+    end)
+    
+    ClearAllBtn.MouseEnter:Connect(function() ClearAllBtn.BackgroundColor3 = Color3.fromRGB(80, 50, 50) end)
+    ClearAllBtn.MouseLeave:Connect(function() ClearAllBtn.BackgroundColor3 = Color3.fromRGB(60, 40, 40) end)
+    
+    local RefreshBtn = Instance.new("TextButton")
+    RefreshBtn.Size = UDim2.new(0, 140, 0, 28)
+    RefreshBtn.Position = UDim2.new(0.5, -70, 1, -38)
+    RefreshBtn.BackgroundColor3 = Color3.fromRGB(40, 60, 40)
+    RefreshBtn.Text = "🔄 ОБНОВИТЬ"
+    RefreshBtn.TextColor3 = Color3.fromRGB(200, 255, 200)
+    RefreshBtn.TextSize = 12
+    RefreshBtn.Font = Enum.Font.GothamBold
+    RefreshBtn.Parent = MainFrame
+    Instance.new("UICorner", RefreshBtn).CornerRadius = UDim.new(0, 6)
+    
+    RefreshBtn.MouseButton1Click:Connect(function()
+        Refresh()
+        print("[PICKER] Обновлено")
+    end)
+    
+    RefreshBtn.MouseEnter:Connect(function() RefreshBtn.BackgroundColor3 = Color3.fromRGB(60, 80, 60) end)
+    RefreshBtn.MouseLeave:Connect(function() RefreshBtn.BackgroundColor3 = Color3.fromRGB(40, 60, 40) end)
+    
+    local CloseBtn = Instance.new("TextButton")
+    CloseBtn.Size = UDim2.new(0, 140, 0, 28)
+    CloseBtn.Position = UDim2.new(1, -150, 1, -38)
+    CloseBtn.BackgroundColor3 = Color3.fromRGB(60, 40, 60)
+    CloseBtn.Text = "✖ ЗАКРЫТЬ"
+    CloseBtn.TextColor3 = Color3.fromRGB(255, 200, 255)
+    CloseBtn.TextSize = 12
+    CloseBtn.Font = Enum.Font.GothamBold
+    CloseBtn.Parent = MainFrame
+    Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 6)
+    
+    CloseBtn.MouseButton1Click:Connect(function()
+        MainFrame.Visible = false
+    end)
+    
+    CloseBtn.MouseEnter:Connect(function() CloseBtn.BackgroundColor3 = Color3.fromRGB(80, 50, 80) end)
+    CloseBtn.MouseLeave:Connect(function() CloseBtn.BackgroundColor3 = Color3.fromRGB(60, 40, 60) end)
+    
+    local Hint = Instance.new("TextLabel")
+    Hint.Size = UDim2.new(1, -20, 0, 20)
+    Hint.Position = UDim2.new(0, 10, 0, 40)
+    Hint.BackgroundTransparency = 1
+    Hint.Text = "🎭 DisplayName (жёлтый) | @username (серый). Нажми СВОЙ/ВРАГ → попадёт в список."
+    Hint.TextColor3 = Color3.fromRGB(180, 180, 180)
+    Hint.TextSize = 11
+    Hint.Font = Enum.Font.Gotham
+    Hint.TextXAlignment = Enum.TextXAlignment.Center
+    Hint.Parent = MainFrame
+    
+    return {
+        Toggle = function()
+            MainFrame.Visible = not MainFrame.Visible
+            if MainFrame.Visible then
+                Refresh()
+            end
+        end,
+        Refresh = Refresh,
+        Close = function()
+            MainFrame.Visible = false
+        end,
+        Destroy = function()
+            ScreenGui:Destroy()
+        end,
+        IsOpen = function()
+            return MainFrame.Visible
+        end
+    }
 end
 
-local function AddTeammateManually(name)
-    KnownTeammates[name] = true
-    KnownEnemies[name] = nil
-    print("[TEAM] ✅ " .. name .. " добавлен в СВОИ")
-end
-
+-- =====================================================
+-- === РУЧНОЕ УПРАВЛЕНИЕ ===
+-- =====================================================
 local function ResetTeams()
     KnownEnemies = {}
     KnownTeammates = {}
     PendingShots = {}
     LastCheckShot = {}
-    print("[TEAM] 🔄 Списки сброшены")
+    ManualEnemies = {}
+    ManualTeammates = {}
+    print("[TEAM] 🔄 Все списки сброшены")
 end
 
 -- =====================================================
@@ -845,7 +1318,7 @@ local function CreateSettingsPanel()
     ScreenGui.DisplayOrder = 1000
     
     local MainFrame = Instance.new("Frame")
-    MainFrame.Size = UDim2.new(0, 300, 0, 490)
+    MainFrame.Size = UDim2.new(0, 300, 0, 530)
     MainFrame.Position = UDim2.new(0, 260, 0, 40)
     MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
     MainFrame.BorderColor3 = Color3.fromRGB(60, 60, 60)
@@ -921,12 +1394,8 @@ local function CreateSettingsPanel()
             ValueLabel.Text = string.format(displayFormat, newVal)
         end
         
-        MinusBtn.MouseButton1Click:Connect(function()
-            UpdateValue(getValue() - (maxVal - minVal) / 20)
-        end)
-        PlusBtn.MouseButton1Click:Connect(function()
-            UpdateValue(getValue() + (maxVal - minVal) / 20)
-        end)
+        MinusBtn.MouseButton1Click:Connect(function() UpdateValue(getValue() - (maxVal - minVal) / 20) end)
+        PlusBtn.MouseButton1Click:Connect(function() UpdateValue(getValue() + (maxVal - minVal) / 20) end)
         
         MinusBtn.MouseEnter:Connect(function() MinusBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 80) end)
         MinusBtn.MouseLeave:Connect(function() MinusBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 60) end)
@@ -935,24 +1404,17 @@ local function CreateSettingsPanel()
     end
     
     CreateSlider(35, "Плавность", 0.05, 0.95, 
-        function() return Settings.Smoothness end,
-        function(v) Settings.Smoothness = v end, "%.2f")
-    
+        function() return Settings.Smoothness end, function(v) Settings.Smoothness = v end, "%.2f")
     CreateSlider(75, "Радиус доводки", 50, 500,
-        function() return Settings.FOV end,
-        function(v) Settings.FOV = v end, "%.0f")
-    
+        function() return Settings.FOV end, function(v) Settings.FOV = v end, "%.0f")
     CreateSlider(115, "Радиус триггера", 20, 150,
-        function() return Settings.TriggerRadius end,
-        function(v) Settings.TriggerRadius = v end, "%.0f")
-    
+        function() return Settings.TriggerRadius end, function(v) Settings.TriggerRadius = v end, "%.0f")
     CreateSlider(155, "Задержка (сек)", 0.01, 0.50,
-        function() return Settings.ShotDelay end,
-        function(v) Settings.ShotDelay = v end, "%.2f")
-    
+        function() return Settings.ShotDelay end, function(v) Settings.ShotDelay = v end, "%.2f")
     CreateSlider(195, "Макс. дистанция", 50, 1000,
-        function() return Settings.MaxAimDistance end,
-        function(v) Settings.MaxAimDistance = v end, "%.0f")
+        function() return Settings.MaxAimDistance end, function(v) Settings.MaxAimDistance = v end, "%.0f")
+    CreateSlider(235, "Смещение прицела", 0, 5,
+        function() return Settings.AimOffset end, function(v) Settings.AimOffset = v end, "%.1f")
     
     local function CreateToggle(yPos, text, getValue, setValue)
         local Btn = Instance.new("TextButton")
@@ -996,21 +1458,16 @@ local function CreateSettingsPanel()
         Btn.MouseLeave:Connect(function() Btn.BackgroundColor3 = Color3.fromRGB(35, 35, 35) end)
     end
     
-    CreateToggle(235, "Не бить своих (стандарт)", 
-        function() return Settings.TeamCheck end,
-        function(v) Settings.TeamCheck = v end)
-    
-    CreateToggle(270, "Адаптивный TeamCheck", 
-        function() return Settings.AdaptiveTeamCheck end,
-        function(v) Settings.AdaptiveTeamCheck = v end)
-    
-    CreateToggle(305, "WallCheck для адаптива", 
-        function() return Settings.AdaptiveWallCheck end,
-        function(v) Settings.AdaptiveWallCheck = v end)
+    CreateToggle(275, "Не бить своих (стандарт)", 
+        function() return Settings.TeamCheck end, function(v) Settings.TeamCheck = v end)
+    CreateToggle(310, "Адаптивный TeamCheck", 
+        function() return Settings.AdaptiveTeamCheck end, function(v) Settings.AdaptiveTeamCheck = v end)
+    CreateToggle(345, "WallCheck для адаптива", 
+        function() return Settings.AdaptiveWallCheck end, function(v) Settings.AdaptiveWallCheck = v end)
     
     local InfoLabel = Instance.new("TextLabel")
     InfoLabel.Size = UDim2.new(1, -20, 0, 40)
-    InfoLabel.Position = UDim2.new(0, 10, 0, 340)
+    InfoLabel.Position = UDim2.new(0, 10, 0, 380)
     InfoLabel.BackgroundColor3 = Color3.fromRGB(15, 15, 25)
     InfoLabel.Text = "Врагов: 0 | Своих: 0"
     InfoLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
@@ -1021,7 +1478,7 @@ local function CreateSettingsPanel()
     
     local ResetBtn = Instance.new("TextButton")
     ResetBtn.Size = UDim2.new(0.45, 0, 0, 30)
-    ResetBtn.Position = UDim2.new(0.03, 0, 0, 395)
+    ResetBtn.Position = UDim2.new(0.03, 0, 0, 435)
     ResetBtn.BackgroundColor3 = Color3.fromRGB(60, 40, 40)
     ResetBtn.Text = "🔄 СБРОС СПИСКОВ"
     ResetBtn.TextColor3 = Color3.fromRGB(255, 200, 200)
@@ -1039,7 +1496,7 @@ local function CreateSettingsPanel()
     
     local CloseBtn = Instance.new("TextButton")
     CloseBtn.Size = UDim2.new(0.45, 0, 0, 30)
-    CloseBtn.Position = UDim2.new(0.52, 0, 0, 395)
+    CloseBtn.Position = UDim2.new(0.52, 0, 0, 435)
     CloseBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
     CloseBtn.Text = "ЗАКРЫТЬ"
     CloseBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -1057,7 +1514,7 @@ local function CreateSettingsPanel()
     
     local ClearCacheBtn = Instance.new("TextButton")
     ClearCacheBtn.Size = UDim2.new(0.94, 0, 0, 25)
-    ClearCacheBtn.Position = UDim2.new(0.03, 0, 0, 430)
+    ClearCacheBtn.Position = UDim2.new(0.03, 0, 0, 470)
     ClearCacheBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 50)
     ClearCacheBtn.Text = "🧹 Очистить кэш"
     ClearCacheBtn.TextColor3 = Color3.fromRGB(150, 150, 255)
@@ -1110,7 +1567,7 @@ local function CreateMainMenu()
     ScreenGui.DisplayOrder = 999
     
     local MainFrame = Instance.new("Frame")
-    MainFrame.Size = UDim2.new(0, 240, 0, 340)
+    MainFrame.Size = UDim2.new(0, 240, 0, 380)
     MainFrame.Position = UDim2.new(0, 10, 0, 40)
     MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
     MainFrame.BorderColor3 = Color3.fromRGB(60, 60, 60)
@@ -1191,9 +1648,26 @@ local function CreateMainMenu()
     local btn6, ind6 = CreateMenuButton(265, "WALLCHECK", "F6",
         function() return Settings.WallCheck end, function() ToggleWall() end)
     
+    local PickerBtn = Instance.new("TextButton")
+    PickerBtn.Size = UDim2.new(0, 220, 0, 30)
+    PickerBtn.Position = UDim2.new(0, 10, 0, 305)
+    PickerBtn.BackgroundColor3 = Color3.fromRGB(60, 40, 80)
+    PickerBtn.Text = "👥 ВЫБОР ИГРОКОВ - F10"
+    PickerBtn.TextColor3 = Color3.fromRGB(220, 180, 255)
+    PickerBtn.Font = Enum.Font.GothamBold
+    PickerBtn.TextSize = 12
+    PickerBtn.Parent = MainFrame
+    Instance.new("UICorner", PickerBtn).CornerRadius = UDim.new(0, 6)
+    
+    PickerBtn.MouseEnter:Connect(function() PickerBtn.BackgroundColor3 = Color3.fromRGB(80, 55, 110) end)
+    PickerBtn.MouseLeave:Connect(function() PickerBtn.BackgroundColor3 = Color3.fromRGB(60, 40, 80) end)
+    PickerBtn.MouseButton1Click:Connect(function()
+        if PlayerPickerPanel then PlayerPickerPanel.Toggle() end
+    end)
+    
     local SettingsBtn = Instance.new("TextButton")
     SettingsBtn.Size = UDim2.new(0, 105, 0, 30)
-    SettingsBtn.Position = UDim2.new(0, 10, 0, 305)
+    SettingsBtn.Position = UDim2.new(0, 10, 0, 340)
     SettingsBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 70)
     SettingsBtn.TextColor3 = Color3.fromRGB(200, 200, 255)
     SettingsBtn.Font = Enum.Font.GothamBold
@@ -1210,7 +1684,7 @@ local function CreateMainMenu()
     
     local DeleteBtn = Instance.new("TextButton")
     DeleteBtn.Size = UDim2.new(0, 105, 0, 30)
-    DeleteBtn.Position = UDim2.new(0, 125, 0, 305)
+    DeleteBtn.Position = UDim2.new(0, 125, 0, 340)
     DeleteBtn.BackgroundColor3 = Color3.fromRGB(70, 30, 30)
     DeleteBtn.TextColor3 = Color3.fromRGB(255, 200, 200)
     DeleteBtn.Font = Enum.Font.GothamBold
@@ -1312,6 +1786,7 @@ local function DeleteScript()
     end
     StopLoop()
     if GUI then GUI.Destroy() end
+    if PlayerPickerPanel then PlayerPickerPanel.Destroy() end
     if LocalPlayer.PlayerGui:FindFirstChild("SettingsPanel") then
         LocalPlayer.PlayerGui.SettingsPanel:Destroy()
     end
@@ -1322,17 +1797,25 @@ end
 -- =====================================================
 LocalPlayer.CharacterAdded:Connect(function()
     print("[TEAM] 🔄 Персонаж перезагружен, списки сохранены")
-    local enemyCount = 0
-    local teamCount = 0
-    for _ in pairs(KnownEnemies) do enemyCount = enemyCount + 1 end
-    for _ in pairs(KnownTeammates) do teamCount = teamCount + 1 end
-    print("[TEAM] Врагов: " .. enemyCount .. " | Своих: " .. teamCount)
+    task.wait(1)
+    if PlayerPickerPanel and PlayerPickerPanel.Refresh then
+        PlayerPickerPanel.Refresh()
+    end
 end)
 
 Players.PlayerRemoving:Connect(function(player)
     KnownEnemies[player.Name] = nil
     KnownTeammates[player.Name] = nil
     LastHealthCache[player.Name] = nil
+    ManualEnemies[player.Name] = nil
+    ManualTeammates[player.Name] = nil
+end)
+
+Players.PlayerAdded:Connect(function(player)
+    task.wait(1)
+    if PlayerPickerPanel and PlayerPickerPanel.Refresh then
+        PlayerPickerPanel.Refresh()
+    end
 end)
 
 -- =====================================================
@@ -1340,6 +1823,7 @@ end)
 -- =====================================================
 SettingsPanel = CreateSettingsPanel()
 GUI = CreateMainMenu()
+PlayerPickerPanel = CreatePlayerPicker()
 
 StartHealthTracking()
 
@@ -1357,6 +1841,8 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
     elseif input.KeyCode == Enum.KeyCode.F4 then ToggleFly()
     elseif input.KeyCode == Enum.KeyCode.F5 then ToggleAim()
     elseif input.KeyCode == Enum.KeyCode.F6 then ToggleWall()
+    elseif input.KeyCode == Enum.KeyCode.F10 then
+        if PlayerPickerPanel then PlayerPickerPanel.Toggle() end
     elseif input.KeyCode == Enum.KeyCode.Insert then ToggleSettings()
     elseif input.KeyCode == Enum.KeyCode.Delete then DeleteScript()
     end
@@ -1371,6 +1857,8 @@ local function OnAction(actionName, inputState)
     elseif actionName == "Fly" then ToggleFly()
     elseif actionName == "AimAssist" then ToggleAim()
     elseif actionName == "WallCheck" then ToggleWall()
+    elseif actionName == "PlayerPicker" then
+        if PlayerPickerPanel then PlayerPickerPanel.Toggle() end
     elseif actionName == "Settings" then ToggleSettings()
     elseif actionName == "Delete" then DeleteScript()
     end
@@ -1382,6 +1870,7 @@ ContextActionService:BindAction("IgnoreList", OnAction, false, Enum.KeyCode.F3)
 ContextActionService:BindAction("Fly", OnAction, false, Enum.KeyCode.F4)
 ContextActionService:BindAction("AimAssist", OnAction, false, Enum.KeyCode.F5)
 ContextActionService:BindAction("WallCheck", OnAction, false, Enum.KeyCode.F6)
+ContextActionService:BindAction("PlayerPicker", OnAction, false, Enum.KeyCode.F10)
 ContextActionService:BindAction("Settings", OnAction, false, Enum.KeyCode.Insert)
 ContextActionService:BindAction("Delete", OnAction, false, Enum.KeyCode.Delete)
 
@@ -1394,24 +1883,19 @@ end)
 StartLoop()
 
 print("====================================================")
-print("🔫 TRIGGERBOT ДЛЯ XENO (АДАПТИВНЫЙ TEAMCHECK v7)")
+print("🔫 TRIGGERBOT ДЛЯ XENO (АДАПТИВНЫЙ TEAMCHECK v11)")
 print("====================================================")
 print("📢 F1 - Триггер бот")
 print("📢 F2 - ESP (ВХ)")
 print("📢 F3 - Игнор-лист")
-print("📢 F4 - Полет (скорость 17)")
+print("📢 F4 - Полет (скорость 30)")
 print("📢 F5 - Доводка")
 print("📢 F6 - WallCheck")
+print("📢 F10 - 👥 МЕНЮ ВЫБОРА ИГРОКОВ")
 print("📢 Insert - Настройки")
 print("📢 Delete - Удалить")
 print("====================================================")
 print("👤 ВАЙТЛИСТ: Dimalruw83, PikaScher, swat228456")
-print("🛡️ ПРИОРИТЕТ: Стандартные тиммейты = всегда СВОИ")
-print("🧠 АДАПТИВНЫЙ TEAMCHECK v7:")
-print("   • Промах → НЕ проверка")
-print("   • Цель за стеной → НЕ проверка")
-print("   • Точное попадание → проверка 5 сек")
-print("   • Урон прошёл → ВРАГ")
-print("   • Игрок убит → ВРАГ")
-print("   • Урон не прошёл → СВОЙ")
+print("🎭 F10: DisplayName (жёлтый) + @username (серый)")
+print("✈️ Полет: 30 | 🎯 Прицел: 1.8")
 print("====================================================")
