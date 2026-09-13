@@ -1,6 +1,6 @@
 -- =====================================================
--- 🔫 TRIGGERBOT ДЛЯ XENO (АДАПТИВНЫЙ TEAMCHECK v13)
--- ИСПРАВЛЕНО: порядок функций, кнопки, меню
+-- 🔫 TRIGGERBOT ДЛЯ XENO (АДАПТИВНЫЙ TEAMCHECK v16)
+-- Игнор-лист = автоматически СВОИ
 -- =====================================================
 
 local Players = game:GetService("Players")
@@ -35,12 +35,13 @@ local Settings = {
 }
 
 -- =====================================================
--- === ИГНОР-ЛИСТ / ВАЙТЛИСТ ===
+-- === ИГНОР-ЛИСТ / ВАЙТЛИСТ (автоматически СВОИ) ===
 -- =====================================================
 local IgnoreList = {
     "Dimalruw83",
     "PikaScher",
     "swat228456",
+    "cat_753cat",
 }
 local IgnoreListEnabled = true
 
@@ -80,7 +81,7 @@ local LastHealthCache = {}
 local LastCheckShot = {}
 
 -- =====================================================
--- === ФУНКЦИИ (ОБЪЯВЛЕНЫ ЗАРАНЕЕ) ===
+-- === FORWARD DECLARATIONS ===
 -- =====================================================
 local ToggleTrigger
 local ToggleWall
@@ -91,6 +92,99 @@ local ToggleESP
 local ToggleSettings
 local DeleteScript
 local ResetTeams
+
+-- =====================================================
+-- === NOTIFICATIONS ===
+-- =====================================================
+local NotificationsGui = nil
+
+local function InitNotifications()
+    if NotificationsGui then return end
+    
+    NotificationsGui = Instance.new("ScreenGui")
+    NotificationsGui.Name = "Trig_Notifications"
+    NotificationsGui.Parent = LocalPlayer.PlayerGui
+    NotificationsGui.ResetOnSpawn = false
+    NotificationsGui.DisplayOrder = 2000
+end
+
+local function Notify(text, color)
+    InitNotifications()
+    
+    color = color or Color3.fromRGB(255, 255, 255)
+    
+    local notif = Instance.new("Frame")
+    notif.Size = UDim2.new(0, 280, 0, 40)
+    notif.Position = UDim2.new(1, 0, 0, 100 + (#NotificationsGui:GetChildren() - 1) * 45)
+    notif.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+    notif.BackgroundTransparency = 0.2
+    notif.BorderColor3 = color
+    notif.BorderSizePixel = 2
+    notif.Parent = NotificationsGui
+    Instance.new("UICorner", notif).CornerRadius = UDim.new(0, 8)
+    
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, -10, 1, 0)
+    label.Position = UDim2.new(0, 5, 0, 0)
+    label.BackgroundTransparency = 1
+    label.Text = text
+    label.TextColor3 = color
+    label.TextSize = 13
+    label.Font = Enum.Font.GothamBold
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.TextWrapped = true
+    label.Parent = notif
+    
+    local targetPos = UDim2.new(1, -300, 0, notif.Position.Y.Offset)
+    notif:TweenPosition(targetPos, "Out", "Quad", 0.3, true)
+    
+    task.delay(3, function()
+        if notif and notif.Parent then
+            notif:TweenPosition(UDim2.new(1, 0, 0, notif.Position.Y.Offset), "In", "Quad", 0.3, true)
+            task.wait(0.3)
+            if notif and notif.Parent then
+                notif:Destroy()
+            end
+        end
+    end)
+end
+
+-- =====================================================
+-- === DRAGGABLE ===
+-- =====================================================
+local function MakeDraggable(frame, dragHandle)
+    dragHandle = dragHandle or frame
+    
+    local dragging = false
+    local dragStart = nil
+    local startPos = nil
+    
+    dragHandle.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = frame.Position
+            
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                end
+            end)
+        end
+    end)
+    
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            local delta = input.Position - dragStart
+            frame.Position = UDim2.new(
+                startPos.X.Scale,
+                startPos.X.Offset + delta.X,
+                startPos.Y.Scale,
+                startPos.Y.Offset + delta.Y
+            )
+        end
+    end)
+end
 
 -- =====================================================
 -- === ПРОВЕРКИ ===
@@ -107,6 +201,17 @@ local function IsStandardTeammate(player)
 end
 
 local function IsIgnored(playerName)
+    if not IgnoreListEnabled then return false end
+    for _, name in ipairs(IgnoreList) do
+        if name:lower() == playerName:lower() then
+            return true
+        end
+    end
+    return false
+end
+
+-- ✅ Игроки из игнор-листа автоматически СВОИ
+local function IsIgnoredAsTeammate(playerName)
     if not IgnoreListEnabled then return false end
     for _, name in ipairs(IgnoreList) do
         if name:lower() == playerName:lower() then
@@ -198,6 +303,9 @@ local function IsTeammate(player)
     if not Settings.TeamCheck then return false end
     if not player then return false end
     
+    -- ✅ Приоритет 1: игнор-лист = свои
+    if IsIgnoredAsTeammate(player.Name) then return true end
+    
     if ManualTeammates[player.Name] then return true end
     if ManualEnemies[player.Name] then return false end
     if IsStandardTeammate(player) then return true end
@@ -211,7 +319,13 @@ end
 
 local function CanAttack(player)
     if player == LocalPlayer then return false end
+    
+    -- ✅ Игнор-лист = свои (не атакуем)
+    if IsIgnoredAsTeammate(player.Name) then return false end
+    
+    -- ✅ Игнор-лист выключен = всё равно не атакуем (можно поменять)
     if IsIgnored(player.Name) then return false end
+    
     if ManualEnemies[player.Name] then return true end
     if ManualTeammates[player.Name] then return false end
     if IsStandardTeammate(player) then return false end
@@ -235,47 +349,38 @@ local function RegisterShot(targetName, wasAimed, wasVisible)
         end
     end
     
-    if not wasAimed then
-        print("[TEAM] 🎯 Промах по " .. targetName)
-        return
-    end
-    
-    if not wasVisible then
-        print("[TEAM] 🧱 " .. targetName .. " за стеной")
-        return
-    end
+    if not wasAimed then return end
+    if not wasVisible then return end
     
     if ManualEnemies[targetName] then
-        print("[TEAM] ❌ " .. targetName .. " — ручной ВРАГ")
         KnownEnemies[targetName] = true
         return
     end
     
     if ManualTeammates[targetName] then
-        print("[TEAM] 🛡️ " .. targetName .. " — ручной СВОЙ")
+        KnownTeammates[targetName] = true
+        return
+    end
+    
+    -- ✅ Если в игнор-листе = свой
+    if IsIgnoredAsTeammate(targetName) then
         KnownTeammates[targetName] = true
         return
     end
     
     local targetPlayer = Players:FindFirstChild(targetName)
     if IsStandardTeammate(targetPlayer) then
-        print("[TEAM] 🛡️ " .. targetName .. " — стандартный тиммейт")
         KnownTeammates[targetName] = true
         KnownEnemies[targetName] = nil
         return
     end
     
-    if KnownTeammates[targetName] then
-        print("[TEAM] 🛡️ " .. targetName .. " уже СВОЙ")
-        return
-    end
+    if KnownTeammates[targetName] then return end
     
     local hpBefore = 100
     if targetPlayer and targetPlayer.Character then
         local humanoid = targetPlayer.Character:FindFirstChild("Humanoid")
-        if humanoid then
-            hpBefore = humanoid.Health
-        end
+        if humanoid then hpBefore = humanoid.Health end
     end
     
     table.insert(PendingShots, {
@@ -284,28 +389,26 @@ local function RegisterShot(targetName, wasAimed, wasVisible)
         HealthBefore = hpBefore,
     })
     
-    print("[TEAM] ✅ Проверка: " .. targetName)
-    
     task.delay(5, function()
         for i, shot in ipairs(PendingShots) do
             if shot.Target == targetName and tick() - shot.Time >= 4.9 then
                 local p = Players:FindFirstChild(targetName)
                 local isEnemy = false
                 local isDead = false
-                local isGone = false
                 local isStdTeammate = false
                 local isManualTeam = false
                 local isManualEnemy = false
+                local isIgnoredTeam = false
                 
                 if IsStandardTeammate(p) then isStdTeammate = true end
                 if ManualTeammates[targetName] then isManualTeam = true end
                 if ManualEnemies[targetName] then isManualEnemy = true end
+                if IsIgnoredAsTeammate(targetName) then isIgnoredTeam = true end
                 
                 if p and p.Character then
                     local humanoid = p.Character:FindFirstChild("Humanoid")
                     if humanoid then
                         local currentHP = humanoid.Health
-                        
                         if currentHP <= 0 then
                             isDead = true
                             isEnemy = true
@@ -316,36 +419,28 @@ local function RegisterShot(targetName, wasAimed, wasVisible)
                 elseif p and not p.Character then
                     isDead = true
                     isEnemy = true
-                elseif not p then
-                    isGone = true
                 end
                 
                 if isManualEnemy then
                     KnownEnemies[targetName] = true
-                    KnownTeammates[targetName] = nil
-                    print("[TEAM] ❌ " .. targetName .. " = ВРАГ (ручной список)")
-                elseif isManualTeam then
+                    Notify("❌ " .. targetName .. " = ВРАГ", Color3.fromRGB(255, 50, 50))
+                elseif isManualTeam or isIgnoredTeam then
                     KnownTeammates[targetName] = true
-                    KnownEnemies[targetName] = nil
-                    print("[TEAM] 🛡️ " .. targetName .. " = СВОЙ (ручной список)")
+                    Notify("🛡️ " .. targetName .. " = СВОЙ", Color3.fromRGB(50, 255, 50))
                 elseif isStdTeammate then
                     KnownTeammates[targetName] = true
-                    KnownEnemies[targetName] = nil
-                    print("[TEAM] 🛡️ " .. targetName .. " = СВОЙ (стандартный)")
-                elseif isGone then
-                    print("[TEAM] ⚠️ " .. targetName .. " вышел")
                 elseif isEnemy then
                     KnownEnemies[targetName] = true
                     KnownTeammates[targetName] = nil
                     if isDead then
-                        print("[TEAM] ❌ " .. targetName .. " = ВРАГ (убит)")
+                        Notify("❌ " .. targetName .. " = ВРАГ (убит)", Color3.fromRGB(255, 50, 50))
                     else
-                        print("[TEAM] ❌ " .. targetName .. " = ВРАГ (урон прошёл)")
+                        Notify("❌ " .. targetName .. " = ВРАГ", Color3.fromRGB(255, 50, 50))
                     end
                 else
                     KnownTeammates[targetName] = true
                     KnownEnemies[targetName] = nil
-                    print("[TEAM] ✅ " .. targetName .. " = СВОЙ (урон не прошёл)")
+                    Notify("🛡️ " .. targetName .. " = СВОЙ", Color3.fromRGB(50, 255, 50))
                 end
                 
                 table.remove(PendingShots, i)
@@ -373,12 +468,13 @@ local function StartHealthTracking()
                 local lastHP = LastHealthCache[player.Name]
                 
                 if lastHP and currentHP < lastHP - 0.5 then
-                    if not IsStandardTeammate(player) and not ManualTeammates[player.Name] and not ManualEnemies[player.Name] then
+                    -- ✅ Игнор-лист и стандартных тиммейтов не записываем в враги
+                    if not IsStandardTeammate(player) and not ManualTeammates[player.Name] and not ManualEnemies[player.Name] and not IsIgnoredAsTeammate(player.Name) then
                         for i, shot in ipairs(PendingShots) do
                             if shot.Target == player.Name then
                                 KnownEnemies[player.Name] = true
                                 KnownTeammates[player.Name] = nil
-                                print("[TEAM] ❌ " .. player.Name .. " = ВРАГ (урон: " .. math.floor(lastHP - currentHP) .. ")")
+                                Notify("❌ " .. player.Name .. " = ВРАГ", Color3.fromRGB(255, 50, 50))
                                 table.remove(PendingShots, i)
                                 break
                             end
@@ -415,7 +511,6 @@ local function CreateESP()
     
     for _, player in ipairs(Players:GetPlayers()) do
         if player == LocalPlayer then continue end
-        if IsIgnored(player.Name) then continue end
         
         local char = player.Character
         if not char then continue end
@@ -431,15 +526,15 @@ local function CreateESP()
         
         local boxColor = Color3.fromRGB(255, 255, 255)
         
-        if ManualEnemies[player.Name] then
-            boxColor = Color3.fromRGB(255, 0, 0)
-        elseif ManualTeammates[player.Name] then
+        -- ✅ Приоритеты цветов
+        -- 1. Игнор-лист = зелёный (свой)
+        if IsIgnoredAsTeammate(player.Name) then
             boxColor = Color3.fromRGB(0, 255, 0)
-        elseif IsStandardTeammate(player) then
-            boxColor = Color3.fromRGB(0, 255, 0)
-        elseif KnownEnemies[player.Name] then
+        -- 2. Враги (ручные или адаптивные) = красный
+        elseif ManualEnemies[player.Name] or KnownEnemies[player.Name] then
             boxColor = Color3.fromRGB(255, 0, 0)
-        elseif KnownTeammates[player.Name] then
+        -- 3. Свои = зелёный
+        elseif ManualTeammates[player.Name] or KnownTeammates[player.Name] or IsStandardTeammate(player) then
             boxColor = Color3.fromRGB(0, 255, 0)
         end
         
@@ -506,7 +601,7 @@ local function CheckNewPlayers()
     
     local currentPlayers = {}
     for _, player in ipairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer and not IsIgnored(player.Name) then
+        if player ~= LocalPlayer then
             local char = player.Character
             if char and char:FindFirstChild("HumanoidRootPart") then
                 local humanoid = char:FindFirstChild("Humanoid")
@@ -571,7 +666,7 @@ local function StartFly()
     BodyGyro.Parent = hrp
     
     FlyEnabled = true
-    print("[XENO] 🚀 Полет включен (скорость: " .. Settings.FlySpeed .. ")")
+    Notify("🚀 Полет ВКЛ (скорость: " .. Settings.FlySpeed .. ")", Color3.fromRGB(100, 200, 255))
     if GUI and GUI.Update then GUI.Update() end
     
     FlyConnection = RunService.RenderStepped:Connect(function()
@@ -651,7 +746,7 @@ local function StopFly()
         end
     end
     
-    print("[XENO] 🚀 Полет выключен")
+    Notify("🚀 Полет ВЫКЛ", Color3.fromRGB(255, 100, 100))
     if GUI and GUI.Update then GUI.Update() end
 end
 
@@ -803,7 +898,10 @@ local function MainLoop()
     local isTargeting, targetPlayer = IsOnTarget()
     if isTargeting and tick() - LastShot > Settings.ShotDelay then
         if targetPlayer then
-            if ManualEnemies[targetPlayer.Name] then
+            -- ✅ Игнор-лист = свои (пропускаем)
+            if IsIgnoredAsTeammate(targetPlayer.Name) then
+                KnownTeammates[targetPlayer.Name] = true
+            elseif ManualEnemies[targetPlayer.Name] then
                 -- Ручной враг
             elseif ManualTeammates[targetPlayer.Name] then
                 -- Ручной тиммейт
@@ -819,7 +917,6 @@ local function MainLoop()
                     
                     if wasAimed and wasVisible then
                         LastCheckShot[targetPlayer.Name] = tick()
-                        print("[TEAM] 🎯 Точный выстрел в " .. targetPlayer.Name)
                     end
                 end
             end
@@ -867,16 +964,18 @@ local function CreatePlayerPicker()
     MainFrame.Parent = ScreenGui
     Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 10)
     
-    local Title = Instance.new("TextLabel")
+    local Title = Instance.new("TextButton")
     Title.Size = UDim2.new(1, 0, 0, 35)
     Title.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
     Title.BorderSizePixel = 0
-    Title.Text = "👥 ВЫБОР ТИММЕЙТОВ / ВРАГОВ [F10]"
+    Title.Text = "👥 ВЫБОР ТИММЕЙТОВ / ВРАГОВ [F10]  ✥ Перетащи меня"
     Title.TextColor3 = Color3.fromRGB(255, 255, 255)
-    Title.TextSize = 16
+    Title.TextSize = 14
     Title.Font = Enum.Font.GothamBold
     Title.Parent = MainFrame
     Instance.new("UICorner", Title).CornerRadius = UDim.new(0, 10)
+    
+    MakeDraggable(MainFrame, Title)
     
     local TeamFrame = Instance.new("Frame")
     TeamFrame.Size = UDim2.new(0.31, -10, 1, -110)
@@ -908,7 +1007,6 @@ local function CreatePlayerPicker()
     
     local TeamLayout = Instance.new("UIListLayout")
     TeamLayout.Padding = UDim.new(0, 4)
-    TeamLayout.SortOrder = Enum.SortOrder.LayoutOrder
     TeamLayout.Parent = TeamScroll
     
     local AllFrame = Instance.new("Frame")
@@ -941,7 +1039,6 @@ local function CreatePlayerPicker()
     
     local AllLayout = Instance.new("UIListLayout")
     AllLayout.Padding = UDim.new(0, 4)
-    AllLayout.SortOrder = Enum.SortOrder.LayoutOrder
     AllLayout.Parent = AllScroll
     
     local EnemyFrame = Instance.new("Frame")
@@ -974,7 +1071,6 @@ local function CreatePlayerPicker()
     
     local EnemyLayout = Instance.new("UIListLayout")
     EnemyLayout.Padding = UDim.new(0, 4)
-    EnemyLayout.SortOrder = Enum.SortOrder.LayoutOrder
     EnemyLayout.Parent = EnemyScroll
     
     local function CreateTeamCard(player, parentFrame, isTeam)
@@ -1018,9 +1114,7 @@ local function CreatePlayerPicker()
         local char = player.Character
         if char then
             local humanoid = char:FindFirstChild("Humanoid")
-            if humanoid then
-                hpText = math.floor(humanoid.Health) .. " HP"
-            end
+            if humanoid then hpText = math.floor(humanoid.Health) .. " HP" end
         end
         
         infoLabel.Text = hpText .. " | клик → убрать"
@@ -1033,10 +1127,10 @@ local function CreatePlayerPicker()
         card.MouseButton1Click:Connect(function()
             if isTeam then
                 ManualTeammates[player.Name] = nil
-                print("[PICKER] " .. player.DisplayName .. " убран из СВОИХ")
+                Notify("Убран из СВОИХ: " .. player.DisplayName, Color3.fromRGB(255, 150, 150))
             else
                 ManualEnemies[player.Name] = nil
-                print("[PICKER] " .. player.DisplayName .. " убран из ВРАГОВ")
+                Notify("Убран из ВРАГОВ: " .. player.DisplayName, Color3.fromRGB(255, 150, 150))
             end
             if PlayerPickerPanel and PlayerPickerPanel.Refresh then
                 PlayerPickerPanel.Refresh()
@@ -1089,7 +1183,10 @@ local function CreatePlayerPicker()
         statusLabel.Position = UDim2.new(0, 5, 0, 36)
         statusLabel.BackgroundTransparency = 1
         
-        if ManualTeammates[player.Name] then
+        if IsIgnoredAsTeammate(player.Name) then
+            statusLabel.Text = "🛡️ СВОЙ (игнор-лист)"
+            statusLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
+        elseif ManualTeammates[player.Name] then
             statusLabel.Text = "🛡️ СВОЙ"
             statusLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
         elseif ManualEnemies[player.Name] then
@@ -1133,7 +1230,7 @@ local function CreatePlayerPicker()
         TeamBtn.MouseButton1Click:Connect(function()
             ManualTeammates[player.Name] = true
             ManualEnemies[player.Name] = nil
-            print("[PICKER] 🛡️ " .. player.DisplayName .. " → СВОИ")
+            Notify("🛡️ " .. player.DisplayName .. " → СВОИ", Color3.fromRGB(0, 255, 0))
             if PlayerPickerPanel and PlayerPickerPanel.Refresh then
                 PlayerPickerPanel.Refresh()
             end
@@ -1142,7 +1239,7 @@ local function CreatePlayerPicker()
         EnemyBtn.MouseButton1Click:Connect(function()
             ManualEnemies[player.Name] = true
             ManualTeammates[player.Name] = nil
-            print("[PICKER] ❌ " .. player.DisplayName .. " → ВРАГИ")
+            Notify("❌ " .. player.DisplayName .. " → ВРАГИ", Color3.fromRGB(255, 50, 50))
             if PlayerPickerPanel and PlayerPickerPanel.Refresh then
                 PlayerPickerPanel.Refresh()
             end
@@ -1214,7 +1311,7 @@ local function CreatePlayerPicker()
     ClearAllBtn.MouseButton1Click:Connect(function()
         ManualTeammates = {}
         ManualEnemies = {}
-        print("[PICKER] Все списки очищены")
+        Notify("🗑 Все списки очищены", Color3.fromRGB(255, 150, 150))
         Refresh()
     end)
     
@@ -1234,7 +1331,6 @@ local function CreatePlayerPicker()
     
     RefreshBtn.MouseButton1Click:Connect(function()
         Refresh()
-        print("[PICKER] Обновлено")
     end)
     
     RefreshBtn.MouseEnter:Connect(function() RefreshBtn.BackgroundColor3 = Color3.fromRGB(60, 80, 60) end)
@@ -1258,34 +1354,15 @@ local function CreatePlayerPicker()
     CloseBtn.MouseEnter:Connect(function() CloseBtn.BackgroundColor3 = Color3.fromRGB(80, 50, 80) end)
     CloseBtn.MouseLeave:Connect(function() CloseBtn.BackgroundColor3 = Color3.fromRGB(60, 40, 60) end)
     
-    local Hint = Instance.new("TextLabel")
-    Hint.Size = UDim2.new(1, -20, 0, 20)
-    Hint.Position = UDim2.new(0, 10, 0, 40)
-    Hint.BackgroundTransparency = 1
-    Hint.Text = "🎭 DisplayName (жёлтый) | @username (серый). Нажми СВОЙ/ВРАГ → попадёт в список."
-    Hint.TextColor3 = Color3.fromRGB(180, 180, 180)
-    Hint.TextSize = 11
-    Hint.Font = Enum.Font.Gotham
-    Hint.TextXAlignment = Enum.TextXAlignment.Center
-    Hint.Parent = MainFrame
-    
     return {
         Toggle = function()
             MainFrame.Visible = not MainFrame.Visible
-            if MainFrame.Visible then
-                Refresh()
-            end
+            if MainFrame.Visible then Refresh() end
         end,
         Refresh = Refresh,
-        Close = function()
-            MainFrame.Visible = false
-        end,
-        Destroy = function()
-            ScreenGui:Destroy()
-        end,
-        IsOpen = function()
-            return MainFrame.Visible
-        end
+        Close = function() MainFrame.Visible = false end,
+        Destroy = function() ScreenGui:Destroy() end,
+        IsOpen = function() return MainFrame.Visible end
     }
 end
 
@@ -1306,7 +1383,7 @@ local function CreateSettingsPanel()
     ScreenGui.DisplayOrder = 1000
     
     local MainFrame = Instance.new("Frame")
-    MainFrame.Size = UDim2.new(0, 300, 0, 570)
+    MainFrame.Size = UDim2.new(0, 300, 0, 560)
     MainFrame.Position = UDim2.new(0, 260, 0, 40)
     MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
     MainFrame.BorderColor3 = Color3.fromRGB(60, 60, 60)
@@ -1315,18 +1392,19 @@ local function CreateSettingsPanel()
     MainFrame.Parent = ScreenGui
     Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 10)
     
-    local Title = Instance.new("TextLabel")
+    local Title = Instance.new("TextButton")
     Title.Size = UDim2.new(1, 0, 0, 30)
     Title.BackgroundTransparency = 1
-    Title.Text = "⚙️ НАСТРОЙКИ"
+    Title.Text = "⚙️ НАСТРОЙКИ (✥ тяни)"
     Title.TextColor3 = Color3.fromRGB(255, 255, 255)
-    Title.TextSize = 18
+    Title.TextSize = 16
     Title.Font = Enum.Font.GothamBold
     Title.Parent = MainFrame
     
+    MakeDraggable(MainFrame, Title)
+    
     local function CreateSlider(yPos, text, minVal, maxVal, getValue, setValue, displayFormat)
         displayFormat = displayFormat or "%.2f"
-        
         local Container = Instance.new("Frame")
         Container.Size = UDim2.new(1, -20, 0, 35)
         Container.Position = UDim2.new(0, 10, 0, yPos)
@@ -1338,7 +1416,7 @@ local function CreateSettingsPanel()
         Label.BackgroundTransparency = 1
         Label.Text = text
         Label.TextColor3 = Color3.fromRGB(200, 200, 200)
-        Label.TextSize = 13
+        Label.TextSize = 12
         Label.Font = Enum.Font.Gotham
         Label.TextXAlignment = Enum.TextXAlignment.Left
         Label.Parent = Container
@@ -1349,7 +1427,7 @@ local function CreateSettingsPanel()
         ValueLabel.BackgroundTransparency = 1
         ValueLabel.Text = string.format(displayFormat, getValue())
         ValueLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-        ValueLabel.TextSize = 13
+        ValueLabel.TextSize = 12
         ValueLabel.Font = Enum.Font.GothamBold
         ValueLabel.TextXAlignment = Enum.TextXAlignment.Right
         ValueLabel.Parent = Container
@@ -1360,7 +1438,6 @@ local function CreateSettingsPanel()
         MinusBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
         MinusBtn.Text = "−"
         MinusBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-        MinusBtn.TextSize = 16
         MinusBtn.Font = Enum.Font.GothamBold
         MinusBtn.Parent = Container
         Instance.new("UICorner", MinusBtn).CornerRadius = UDim.new(0, 4)
@@ -1371,7 +1448,6 @@ local function CreateSettingsPanel()
         PlusBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
         PlusBtn.Text = "+"
         PlusBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-        PlusBtn.TextSize = 16
         PlusBtn.Font = Enum.Font.GothamBold
         PlusBtn.Parent = Container
         Instance.new("UICorner", PlusBtn).CornerRadius = UDim.new(0, 4)
@@ -1416,7 +1492,7 @@ local function CreateSettingsPanel()
         Instance.new("UICorner", Btn).CornerRadius = UDim.new(0, 6)
         
         local Lbl = Instance.new("TextLabel")
-        Lbl.Size = UDim2.new(0.75, 0, 1, 0)
+        Lbl.Size = UDim2.new(0.8, 0, 1, 0)
         Lbl.Position = UDim2.new(0, 10, 0, 0)
         Lbl.BackgroundTransparency = 1
         Lbl.Text = text
@@ -1468,7 +1544,7 @@ local function CreateSettingsPanel()
     
     local ResetBtn = Instance.new("TextButton")
     ResetBtn.Size = UDim2.new(0.45, 0, 0, 30)
-    ResetBtn.Position = UDim2.new(0.03, 0, 0, 475)
+    ResetBtn.Position = UDim2.new(0.03, 0, 0, 470)
     ResetBtn.BackgroundColor3 = Color3.fromRGB(60, 40, 40)
     ResetBtn.Text = "🔄 СБРОС СПИСКОВ"
     ResetBtn.TextColor3 = Color3.fromRGB(255, 200, 200)
@@ -1486,7 +1562,7 @@ local function CreateSettingsPanel()
     
     local CloseBtn = Instance.new("TextButton")
     CloseBtn.Size = UDim2.new(0.45, 0, 0, 30)
-    CloseBtn.Position = UDim2.new(0.52, 0, 0, 475)
+    CloseBtn.Position = UDim2.new(0.52, 0, 0, 470)
     CloseBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
     CloseBtn.Text = "ЗАКРЫТЬ"
     CloseBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -1504,7 +1580,7 @@ local function CreateSettingsPanel()
     
     local ClearCacheBtn = Instance.new("TextButton")
     ClearCacheBtn.Size = UDim2.new(0.94, 0, 0, 25)
-    ClearCacheBtn.Position = UDim2.new(0.03, 0, 0, 510)
+    ClearCacheBtn.Position = UDim2.new(0.03, 0, 0, 505)
     ClearCacheBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 50)
     ClearCacheBtn.Text = "🧹 Очистить кэш"
     ClearCacheBtn.TextColor3 = Color3.fromRGB(150, 150, 255)
@@ -1516,7 +1592,7 @@ local function CreateSettingsPanel()
     ClearCacheBtn.MouseButton1Click:Connect(function()
         LastHealthCache = {}
         PendingShots = {}
-        print("[TEAM] 🧹 Кэш очищен")
+        Notify("🧹 Кэш очищен", Color3.fromRGB(150, 150, 255))
     end)
     ClearCacheBtn.MouseEnter:Connect(function() ClearCacheBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 80) end)
     ClearCacheBtn.MouseLeave:Connect(function() ClearCacheBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 50) end)
@@ -1565,14 +1641,16 @@ local function CreateMainMenu()
     MainFrame.Parent = ScreenGui
     Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 10)
     
-    local Title = Instance.new("TextLabel")
+    local Title = Instance.new("TextButton")
     Title.Size = UDim2.new(1, 0, 0, 35)
     Title.BackgroundTransparency = 1
-    Title.Text = "🔫 TRIGGERBOT"
+    Title.Text = "🔫 TRIGGERBOT  ✥"
     Title.TextColor3 = Color3.fromRGB(255, 255, 255)
-    Title.TextSize = 20
+    Title.TextSize = 18
     Title.Font = Enum.Font.GothamBold
     Title.Parent = MainFrame
+    
+    MakeDraggable(MainFrame, Title)
     
     local function CreateMenuButton(yPos, text, keybind, getState, toggleFunc)
         local Container = Instance.new("Frame")
@@ -1703,7 +1781,7 @@ local function CreateMainMenu()
 end
 
 -- =====================================================
--- === ФУНКЦИИ ПЕРЕКЛЮЧЕНИЯ (ОПРЕДЕЛЯЕМ ЗДЕСЬ) ===
+-- === ФУНКЦИИ ПЕРЕКЛЮЧЕНИЯ ===
 -- =====================================================
 function ToggleSettings()
     if not ScriptRunning then return end
@@ -1714,21 +1792,21 @@ function ToggleTrigger()
     if not ScriptRunning then return end
     Settings.TriggerBot = not Settings.TriggerBot
     if GUI and GUI.Update then GUI.Update() end
-    print("[XENO] TriggerBot:", Settings.TriggerBot and "ON" or "OFF")
+    Notify("🎯 TriggerBot " .. (Settings.TriggerBot and "ВКЛ" or "ВЫКЛ"), Settings.TriggerBot and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 100, 100))
 end
 
 function ToggleWall()
     if not ScriptRunning then return end
     Settings.WallCheck = not Settings.WallCheck
     if GUI and GUI.Update then GUI.Update() end
-    print("[XENO] WallCheck:", Settings.WallCheck and "ON" or "OFF")
+    Notify("🧱 WallCheck " .. (Settings.WallCheck and "ВКЛ" or "ВЫКЛ"), Settings.WallCheck and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 100, 100))
 end
 
 function ToggleAim()
     if not ScriptRunning then return end
     Settings.AimAssist = not Settings.AimAssist
     if GUI and GUI.Update then GUI.Update() end
-    print("[XENO] AimAssist:", Settings.AimAssist and "ON" or "OFF")
+    Notify("🎯 Доводка " .. (Settings.AimAssist and "ВКЛ" or "ВЫКЛ"), Settings.AimAssist and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 100, 100))
 end
 
 function ToggleIgnoreList()
@@ -1736,7 +1814,7 @@ function ToggleIgnoreList()
     IgnoreListEnabled = not IgnoreListEnabled
     if GUI and GUI.Update then GUI.Update() end
     if ESPEnabled then CreateESP() end
-    print("[XENO] Игнор-лист:", IgnoreListEnabled and "ВКЛ" or "ВЫКЛ")
+    Notify("👤 Игнор-лист " .. (IgnoreListEnabled and "ВКЛ" or "ВЫКЛ"), Color3.fromRGB(200, 200, 255))
 end
 
 function ToggleFly()
@@ -1750,7 +1828,7 @@ function ToggleESP()
     ESPEnabled = not ESPEnabled
     
     if ESPEnabled then
-        print("[XENO] 👁️ ESP ВКЛЮЧЕН")
+        Notify("👁️ ESP ВКЛ", Color3.fromRGB(0, 255, 200))
         CreateESP()
         ESPConnection = RunService.Heartbeat:Connect(function()
             if ESPEnabled and tick() - LastESPUpdate > 2 then
@@ -1759,7 +1837,7 @@ function ToggleESP()
             end
         end)
     else
-        print("[XENO] 👁️ ESP ВЫКЛЮЧЕН")
+        Notify("👁️ ESP ВЫКЛ", Color3.fromRGB(255, 100, 100))
         if ESPConnection then ESPConnection:Disconnect(); ESPConnection = nil end
         ClearESP()
     end
@@ -1773,11 +1851,11 @@ function ResetTeams()
     LastCheckShot = {}
     ManualEnemies = {}
     ManualTeammates = {}
-    print("[TEAM] 🔄 Все списки сброшены")
+    Notify("🔄 Все списки сброшены", Color3.fromRGB(255, 200, 100))
 end
 
 function DeleteScript()
-    print("[XENO] Скрипт удален")
+    Notify("🗑 Скрипт удален", Color3.fromRGB(255, 100, 100))
     ScriptRunning = false
     if FlyEnabled then StopFly() end
     if ESPEnabled then
@@ -1790,11 +1868,15 @@ function DeleteScript()
     if LocalPlayer.PlayerGui:FindFirstChild("SettingsPanel") then
         LocalPlayer.PlayerGui.SettingsPanel:Destroy()
     end
+    if LocalPlayer.PlayerGui:FindFirstChild("Trig_Notifications") then
+        LocalPlayer.PlayerGui.Trig_Notifications:Destroy()
+    end
 end
 
 -- =====================================================
 -- === СОЗДАНИЕ И ЗАПУСК ===
 -- =====================================================
+InitNotifications()
 SettingsPanel = CreateSettingsPanel()
 GUI = CreateMainMenu()
 PlayerPickerPanel = CreatePlayerPicker()
@@ -1806,7 +1888,6 @@ StartLoop()
 -- === СОБЫТИЯ ===
 -- =====================================================
 LocalPlayer.CharacterAdded:Connect(function()
-    print("[TEAM] 🔄 Персонаж перезагружен")
     task.wait(1)
     if PlayerPickerPanel and PlayerPickerPanel.Refresh then
         PlayerPickerPanel.Refresh()
@@ -1882,15 +1963,12 @@ RunService.Heartbeat:Connect(function()
 end)
 
 print("====================================================")
-print("🔫 TRIGGERBOT ДЛЯ XENO (v13)")
+print("🔫 TRIGGERBOT v16")
 print("====================================================")
-print("📢 F1 - Триггер бот")
-print("📢 F2 - ESP (ВХ)")
-print("📢 F3 - Игнор-лист")
-print("📢 F4 - Полет")
-print("📢 F5 - Доводка")
-print("📢 F6 - WallCheck")
-print("📢 F10 - МЕНЮ ВЫБОРА ИГРОКОВ")
-print("📢 Insert - Настройки")
-print("📢 Delete - Удалить")
+print("📢 F1-F6, F10, Insert, Delete")
+print("🆕 Игнор-лист = автоматически СВОИ")
+print("👤 Игнор-лист:")
+for _, name in ipairs(IgnoreList) do
+    print("   • " .. name)
+end
 print("====================================================")
