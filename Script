@@ -1,6 +1,6 @@
 -- =====================================================
--- 🔫 TRIGGERBOT ДЛЯ XENO (АДАПТИВНЫЙ TEAMCHECK v16)
--- Игнор-лист = автоматически СВОИ
+-- 🔫 TRIGGERBOT ДЛЯ XENO (АДАПТИВНЫЙ TEAMCHECK v18)
+-- Компактное меню + 3 кружка + зелёная палитра
 -- =====================================================
 
 local Players = game:GetService("Players")
@@ -8,10 +8,29 @@ local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 local ContextActionService = game:GetService("ContextActionService")
+local TweenService = game:GetService("TweenService")
 
 local LocalPlayer = Players.LocalPlayer
 local Camera = Workspace.CurrentCamera
 local Mouse = LocalPlayer:GetMouse()
+
+-- =====================================================
+-- === ЦВЕТОВАЯ ПАЛИТРА (ЗЕЛЁНАЯ) ===
+-- =====================================================
+local COLORS = {
+    BgDark = Color3.fromRGB(8, 20, 12),
+    BgPanel = Color3.fromRGB(15, 35, 22),
+    BgSection = Color3.fromRGB(20, 45, 28),
+    Accent = Color3.fromRGB(0, 255, 100),
+    AccentDark = Color3.fromRGB(0, 180, 70),
+    AccentGlow = Color3.fromRGB(0, 255, 150),
+    Text = Color3.fromRGB(255, 255, 255),
+    TextDim = Color3.fromRGB(150, 200, 160),
+    Success = Color3.fromRGB(0, 255, 100),
+    Error = Color3.fromRGB(255, 80, 80),
+    Warning = Color3.fromRGB(255, 200, 80),
+    Disabled = Color3.fromRGB(60, 60, 60),
+}
 
 -- =====================================================
 -- === НАСТРОЙКИ ===
@@ -35,7 +54,7 @@ local Settings = {
 }
 
 -- =====================================================
--- === ИГНОР-ЛИСТ / ВАЙТЛИСТ (автоматически СВОИ) ===
+-- === ИГНОР-ЛИСТ ===
 -- =====================================================
 local IgnoreList = {
     "Dimalruw83",
@@ -45,9 +64,6 @@ local IgnoreList = {
 }
 local IgnoreListEnabled = true
 
--- =====================================================
--- === РУЧНЫЕ СПИСКИ ===
--- =====================================================
 local ManualTeammates = {}
 local ManualEnemies = {}
 
@@ -71,76 +87,84 @@ local ESPObjects = {}
 local ESP_MAX_DISTANCE = 300
 local LastESPUpdate = 0
 
--- =====================================================
--- === АДАПТИВНЫЙ TEAMCHECK ===
--- =====================================================
 local KnownEnemies = {}
 local KnownTeammates = {}
 local PendingShots = {}
 local LastHealthCache = {}
 local LastCheckShot = {}
 
--- =====================================================
--- === FORWARD DECLARATIONS ===
--- =====================================================
-local ToggleTrigger
-local ToggleWall
-local ToggleAim
-local ToggleIgnoreList
-local ToggleFly
-local ToggleESP
-local ToggleSettings
-local DeleteScript
-local ResetTeams
+local ToggleTrigger, ToggleWall, ToggleAim, ToggleIgnoreList
+local ToggleFly, ToggleESP, ToggleSettings, DeleteScript, ResetTeams
 
 -- =====================================================
--- === NOTIFICATIONS ===
+-- === NOTIFICATIONS (ЗЕЛЁНЫЕ, СВЕРХУ ПО ЦЕНТРУ) ===
 -- =====================================================
 local NotificationsGui = nil
 
 local function InitNotifications()
     if NotificationsGui then return end
-    
     NotificationsGui = Instance.new("ScreenGui")
     NotificationsGui.Name = "Trig_Notifications"
     NotificationsGui.Parent = LocalPlayer.PlayerGui
     NotificationsGui.ResetOnSpawn = false
-    NotificationsGui.DisplayOrder = 2000
+    NotificationsGui.DisplayOrder = 5000
 end
 
 local function Notify(text, color)
     InitNotifications()
-    
-    color = color or Color3.fromRGB(255, 255, 255)
+    color = color or COLORS.Accent
     
     local notif = Instance.new("Frame")
-    notif.Size = UDim2.new(0, 280, 0, 40)
-    notif.Position = UDim2.new(1, 0, 0, 100 + (#NotificationsGui:GetChildren() - 1) * 45)
-    notif.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-    notif.BackgroundTransparency = 0.2
+    notif.Size = UDim2.new(0, 350, 0, 50)
+    notif.Position = UDim2.new(0.5, -175, 0, -60)
+    notif.BackgroundColor3 = COLORS.BgDark
+    notif.BackgroundTransparency = 0.1
     notif.BorderColor3 = color
     notif.BorderSizePixel = 2
     notif.Parent = NotificationsGui
-    Instance.new("UICorner", notif).CornerRadius = UDim.new(0, 8)
+    Instance.new("UICorner", notif).CornerRadius = UDim.new(0, 12)
+    
+    local glow = Instance.new("UIStroke")
+    glow.Color = color
+    glow.Thickness = 2
+    glow.Transparency = 0.3
+    glow.Parent = notif
+    
+    local icon = Instance.new("Frame")
+    icon.Size = UDim2.new(0, 30, 0, 30)
+    icon.Position = UDim2.new(0, 10, 0.5, -15)
+    icon.BackgroundColor3 = color
+    icon.BorderSizePixel = 0
+    icon.Parent = notif
+    Instance.new("UICorner", icon).CornerRadius = UDim.new(1, 0)
+    
+    local iconDot = Instance.new("TextLabel")
+    iconDot.Size = UDim2.new(1, 0, 1, 0)
+    iconDot.BackgroundTransparency = 1
+    iconDot.Text = "●"
+    iconDot.TextColor3 = COLORS.BgDark
+    iconDot.TextSize = 16
+    iconDot.Font = Enum.Font.GothamBold
+    iconDot.Parent = icon
     
     local label = Instance.new("TextLabel")
-    label.Size = UDim2.new(1, -10, 1, 0)
-    label.Position = UDim2.new(0, 5, 0, 0)
+    label.Size = UDim2.new(1, -55, 1, 0)
+    label.Position = UDim2.new(0, 50, 0, 0)
     label.BackgroundTransparency = 1
     label.Text = text
-    label.TextColor3 = color
-    label.TextSize = 13
+    label.TextColor3 = COLORS.Text
+    label.TextSize = 14
     label.Font = Enum.Font.GothamBold
     label.TextXAlignment = Enum.TextXAlignment.Left
     label.TextWrapped = true
     label.Parent = notif
     
-    local targetPos = UDim2.new(1, -300, 0, notif.Position.Y.Offset)
-    notif:TweenPosition(targetPos, "Out", "Quad", 0.3, true)
+    local targetPos = UDim2.new(0.5, -175, 0, 80)
+    notif:TweenPosition(targetPos, "Out", "Back", 0.4, true)
     
-    task.delay(3, function()
+    task.delay(2.5, function()
         if notif and notif.Parent then
-            notif:TweenPosition(UDim2.new(1, 0, 0, notif.Position.Y.Offset), "In", "Quad", 0.3, true)
+            notif:TweenPosition(UDim2.new(0.5, -175, 0, -60), "In", "Quad", 0.3, true)
             task.wait(0.3)
             if notif and notif.Parent then
                 notif:Destroy()
@@ -187,6 +211,52 @@ local function MakeDraggable(frame, dragHandle)
 end
 
 -- =====================================================
+-- === КРАСИВЫЙ ИНДИКАТОР ===
+-- =====================================================
+local function CreateModernIndicator(parent, getState)
+    local container = Instance.new("Frame")
+    container.Size = UDim2.new(0, 44, 0, 24)
+    container.Position = UDim2.new(1, -54, 0.5, -12)
+    container.BackgroundColor3 = getState() and COLORS.AccentDark or COLORS.Disabled
+    container.BorderSizePixel = 0
+    container.Parent = parent
+    Instance.new("UICorner", container).CornerRadius = UDim.new(1, 0)
+    
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = getState() and COLORS.Accent or COLORS.Disabled
+    stroke.Thickness = 1
+    stroke.Transparency = 0.3
+    stroke.Parent = container
+    
+    local circle = Instance.new("Frame")
+    circle.Name = "Circle"
+    circle.Size = UDim2.new(0, 18, 0, 18)
+    circle.Position = getState() and UDim2.new(1, -21, 0.5, -9) or UDim2.new(0, 3, 0.5, -9)
+    circle.BackgroundColor3 = getState() and COLORS.Accent or COLORS.Disabled
+    circle.BorderSizePixel = 0
+    circle.Parent = container
+    Instance.new("UICorner", circle).CornerRadius = UDim.new(1, 0)
+    
+    return {
+        Container = container,
+        Circle = circle,
+        Update = function()
+            local state = getState()
+            TweenService:Create(container, TweenInfo.new(0.2), {
+                BackgroundColor3 = state and COLORS.AccentDark or COLORS.Disabled
+            }):Play()
+            TweenService:Create(circle, TweenInfo.new(0.2), {
+                Position = state and UDim2.new(1, -21, 0.5, -9) or UDim2.new(0, 3, 0.5, -9),
+                BackgroundColor3 = state and COLORS.Accent or COLORS.Disabled
+            }):Play()
+            TweenService:Create(stroke, TweenInfo.new(0.2), {
+                Color = state and COLORS.Accent or COLORS.Disabled
+            }):Play()
+        end
+    }
+end
+
+-- =====================================================
 -- === ПРОВЕРКИ ===
 -- =====================================================
 local function IsTracked(name)
@@ -210,7 +280,6 @@ local function IsIgnored(playerName)
     return false
 end
 
--- ✅ Игроки из игнор-листа автоматически СВОИ
 local function IsIgnoredAsTeammate(playerName)
     if not IgnoreListEnabled then return false end
     for _, name in ipairs(IgnoreList) do
@@ -237,24 +306,18 @@ local function IsVisibleForAdaptive(targetPart)
     
     local direction = (targetPart.Position - origin.Position)
     local distance = direction.Magnitude
-    
     if distance <= 0 then return false end
     
     local result = Workspace:Raycast(origin.Position, direction.Unit * distance, params)
-    
     if not result then return true end
     
     local hit = result.Instance
     if hit then
         local hitPlayer = Players:GetPlayerFromCharacter(hit.Parent)
         if hitPlayer then return true end
-        
         local targetChar = targetPart.Parent
-        if targetChar and hit:IsDescendantOf(targetChar) then
-            return true
-        end
+        if targetChar and hit:IsDescendantOf(targetChar) then return true end
     end
-    
     return false
 end
 
@@ -276,7 +339,6 @@ local function IsVisible(part)
     params.FilterDescendantsInstances = {LocalPlayer.Character, Camera}
     
     local result = Workspace:Raycast(origin.Position, (part.Position - origin.Position).Unit * (origin.Position - part.Position).Magnitude, params)
-    
     if not result then return true end
     
     local hit = result.Instance
@@ -291,41 +353,30 @@ local function IsWithinDistance(hrp)
     if not LocalPlayer.Character then return false end
     local myHrp = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
     if not myHrp then return false end
-    
     local dist = (myHrp.Position - hrp.Position).Magnitude
     return dist <= Settings.MaxAimDistance
 end
 
 -- =====================================================
--- === TEAMCHECK ЛОГИКА ===
+-- === TEAMCHECK ===
 -- =====================================================
 local function IsTeammate(player)
     if not Settings.TeamCheck then return false end
     if not player then return false end
     
-    -- ✅ Приоритет 1: игнор-лист = свои
     if IsIgnoredAsTeammate(player.Name) then return true end
-    
     if ManualTeammates[player.Name] then return true end
     if ManualEnemies[player.Name] then return false end
     if IsStandardTeammate(player) then return true end
-    
-    if Settings.AdaptiveTeamCheck and KnownTeammates[player.Name] then
-        return true
-    end
+    if Settings.AdaptiveTeamCheck and KnownTeammates[player.Name] then return true end
     
     return false
 end
 
 local function CanAttack(player)
     if player == LocalPlayer then return false end
-    
-    -- ✅ Игнор-лист = свои (не атакуем)
     if IsIgnoredAsTeammate(player.Name) then return false end
-    
-    -- ✅ Игнор-лист выключен = всё равно не атакуем (можно поменять)
     if IsIgnored(player.Name) then return false end
-    
     if ManualEnemies[player.Name] then return true end
     if ManualTeammates[player.Name] then return false end
     if IsStandardTeammate(player) then return false end
@@ -335,7 +386,6 @@ local function CanAttack(player)
     end
     
     if IsTeammate(player) then return false end
-    
     return true
 end
 
@@ -356,13 +406,10 @@ local function RegisterShot(targetName, wasAimed, wasVisible)
         KnownEnemies[targetName] = true
         return
     end
-    
     if ManualTeammates[targetName] then
         KnownTeammates[targetName] = true
         return
     end
-    
-    -- ✅ Если в игнор-листе = свой
     if IsIgnoredAsTeammate(targetName) then
         KnownTeammates[targetName] = true
         return
@@ -423,24 +470,20 @@ local function RegisterShot(targetName, wasAimed, wasVisible)
                 
                 if isManualEnemy then
                     KnownEnemies[targetName] = true
-                    Notify("❌ " .. targetName .. " = ВРАГ", Color3.fromRGB(255, 50, 50))
+                    Notify("❌ " .. targetName .. " = ВРАГ", COLORS.Error)
                 elseif isManualTeam or isIgnoredTeam then
                     KnownTeammates[targetName] = true
-                    Notify("🛡️ " .. targetName .. " = СВОЙ", Color3.fromRGB(50, 255, 50))
+                    Notify("🛡️ " .. targetName .. " = СВОЙ", COLORS.Success)
                 elseif isStdTeammate then
                     KnownTeammates[targetName] = true
                 elseif isEnemy then
                     KnownEnemies[targetName] = true
                     KnownTeammates[targetName] = nil
-                    if isDead then
-                        Notify("❌ " .. targetName .. " = ВРАГ (убит)", Color3.fromRGB(255, 50, 50))
-                    else
-                        Notify("❌ " .. targetName .. " = ВРАГ", Color3.fromRGB(255, 50, 50))
-                    end
+                    Notify("❌ " .. targetName .. (isDead and " = ВРАГ (убит)" or " = ВРАГ"), COLORS.Error)
                 else
                     KnownTeammates[targetName] = true
                     KnownEnemies[targetName] = nil
-                    Notify("🛡️ " .. targetName .. " = СВОЙ", Color3.fromRGB(50, 255, 50))
+                    Notify("🛡️ " .. targetName .. " = СВОЙ", COLORS.Success)
                 end
                 
                 table.remove(PendingShots, i)
@@ -454,7 +497,6 @@ local function StartHealthTracking()
     task.spawn(function()
         while ScriptRunning do
             task.wait(0.05)
-            
             for _, player in ipairs(Players:GetPlayers()) do
                 if player == LocalPlayer then continue end
                 
@@ -468,13 +510,12 @@ local function StartHealthTracking()
                 local lastHP = LastHealthCache[player.Name]
                 
                 if lastHP and currentHP < lastHP - 0.5 then
-                    -- ✅ Игнор-лист и стандартных тиммейтов не записываем в враги
                     if not IsStandardTeammate(player) and not ManualTeammates[player.Name] and not ManualEnemies[player.Name] and not IsIgnoredAsTeammate(player.Name) then
                         for i, shot in ipairs(PendingShots) do
                             if shot.Target == player.Name then
                                 KnownEnemies[player.Name] = true
                                 KnownTeammates[player.Name] = nil
-                                Notify("❌ " .. player.Name .. " = ВРАГ", Color3.fromRGB(255, 50, 50))
+                                Notify("❌ " .. player.Name .. " = ВРАГ", COLORS.Error)
                                 table.remove(PendingShots, i)
                                 break
                             end
@@ -524,18 +565,14 @@ local function CreateESP()
         local humanoid = char:FindFirstChild("Humanoid")
         if not humanoid or humanoid.Health <= 0 then continue end
         
-        local boxColor = Color3.fromRGB(255, 255, 255)
+        local boxColor = COLORS.Text
         
-        -- ✅ Приоритеты цветов
-        -- 1. Игнор-лист = зелёный (свой)
         if IsIgnoredAsTeammate(player.Name) then
-            boxColor = Color3.fromRGB(0, 255, 0)
-        -- 2. Враги (ручные или адаптивные) = красный
+            boxColor = COLORS.Success
         elseif ManualEnemies[player.Name] or KnownEnemies[player.Name] then
-            boxColor = Color3.fromRGB(255, 0, 0)
-        -- 3. Свои = зелёный
+            boxColor = COLORS.Error
         elseif ManualTeammates[player.Name] or KnownTeammates[player.Name] or IsStandardTeammate(player) then
-            boxColor = Color3.fromRGB(0, 255, 0)
+            boxColor = COLORS.Success
         end
         
         local box = Instance.new("BoxHandleAdornment")
@@ -559,16 +596,18 @@ local function CreateESP()
         
         local hpBg = Instance.new("Frame")
         hpBg.Size = UDim2.new(1, 0, 1, 0)
-        hpBg.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+        hpBg.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
         hpBg.BackgroundTransparency = 0.3
         hpBg.BorderSizePixel = 0
         hpBg.Parent = hpBar
+        Instance.new("UICorner", hpBg).CornerRadius = UDim.new(1, 0)
         
         local hpFill = Instance.new("Frame")
         hpFill.Size = UDim2.new(1, 0, 1, 0)
-        hpFill.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+        hpFill.BackgroundColor3 = COLORS.Success
         hpFill.BorderSizePixel = 0
         hpFill.Parent = hpBg
+        Instance.new("UICorner", hpFill).CornerRadius = UDim.new(1, 0)
         
         local function UpdateHP()
             local h = char:FindFirstChild("Humanoid")
@@ -576,11 +615,11 @@ local function CreateESP()
                 local health = h.Health / h.MaxHealth
                 hpFill.Size = UDim2.new(health, 0, 1, 0)
                 if health > 0.6 then
-                    hpFill.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+                    hpFill.BackgroundColor3 = COLORS.Success
                 elseif health > 0.3 then
-                    hpFill.BackgroundColor3 = Color3.fromRGB(255, 200, 0)
+                    hpFill.BackgroundColor3 = COLORS.Warning
                 else
-                    hpFill.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+                    hpFill.BackgroundColor3 = COLORS.Error
                 end
             end
         end
@@ -666,7 +705,7 @@ local function StartFly()
     BodyGyro.Parent = hrp
     
     FlyEnabled = true
-    Notify("🚀 Полет ВКЛ (скорость: " .. Settings.FlySpeed .. ")", Color3.fromRGB(100, 200, 255))
+    Notify("🚀 Полет ВКЛ (скорость: " .. Settings.FlySpeed .. ")", COLORS.AccentGlow)
     if GUI and GUI.Update then GUI.Update() end
     
     FlyConnection = RunService.RenderStepped:Connect(function()
@@ -746,7 +785,7 @@ local function StopFly()
         end
     end
     
-    Notify("🚀 Полет ВЫКЛ", Color3.fromRGB(255, 100, 100))
+    Notify("🚀 Полет ВЫКЛ", COLORS.Error)
     if GUI and GUI.Update then GUI.Update() end
 end
 
@@ -768,11 +807,8 @@ local function GetTarget()
         if not IsAlive(char) then continue end
         
         local part = char:FindFirstChild("Head")
-        if not part then
-            part = char:FindFirstChild("HumanoidRootPart")
-        end
+        if not part then part = char:FindFirstChild("HumanoidRootPart") end
         if not part then continue end
-        
         if not IsWithinDistance(part) then continue end
         
         local aimPos = part.Position + Vector3.new(0, Settings.AimOffset, 0)
@@ -855,9 +891,7 @@ local function WasAimedAtTarget(targetPlayer)
         local pos, onScreen = Camera:WorldToViewportPoint(aimPos)
         if onScreen then
             local dist = (Vector2.new(pos.X, pos.Y) - center).Magnitude
-            if dist < Settings.AimPrecision then
-                return true
-            end
+            if dist < Settings.AimPrecision then return true end
         end
     end
     
@@ -867,25 +901,19 @@ local function WasAimedAtTarget(targetPlayer)
         local pos, onScreen = Camera:WorldToViewportPoint(aimPos)
         if onScreen then
             local dist = (Vector2.new(pos.X, pos.Y) - center).Magnitude
-            if dist < Settings.AimPrecision + 10 then
-                return true
-            end
+            if dist < Settings.AimPrecision + 10 then return true end
         end
     end
-    
     return false
 end
 
 local function WasVisibleForAdaptive(targetPlayer)
     if not targetPlayer or not targetPlayer.Character then return false end
-    
     local char = targetPlayer.Character
     local head = char:FindFirstChild("Head")
     local hrp = char:FindFirstChild("HumanoidRootPart")
-    
     if head and IsVisibleForAdaptive(head) then return true end
     if hrp and IsVisibleForAdaptive(hrp) then return true end
-    
     return false
 end
 
@@ -898,7 +926,6 @@ local function MainLoop()
     local isTargeting, targetPlayer = IsOnTarget()
     if isTargeting and tick() - LastShot > Settings.ShotDelay then
         if targetPlayer then
-            -- ✅ Игнор-лист = свои (пропускаем)
             if IsIgnoredAsTeammate(targetPlayer.Name) then
                 KnownTeammates[targetPlayer.Name] = true
             elseif ManualEnemies[targetPlayer.Name] then
@@ -912,9 +939,7 @@ local function MainLoop()
                 if not LastCheckShot[targetPlayer.Name] or tick() - LastCheckShot[targetPlayer.Name] > Settings.CheckShotCooldown then
                     local wasAimed = WasAimedAtTarget(targetPlayer)
                     local wasVisible = WasVisibleForAdaptive(targetPlayer)
-                    
                     RegisterShot(targetPlayer.Name, wasAimed, wasVisible)
-                    
                     if wasAimed and wasVisible then
                         LastCheckShot[targetPlayer.Name] = tick()
                     end
@@ -939,6 +964,292 @@ local function StopLoop()
 end
 
 -- =====================================================
+-- === ГЛАВНОЕ МЕНЮ (КОМПАКТНОЕ, 3 КРУЖКА) ===
+-- =====================================================
+local function CreateMainMenu()
+    pcall(function()
+        if LocalPlayer.PlayerGui:FindFirstChild("CustomMenu") then
+            LocalPlayer.PlayerGui.CustomMenu:Destroy()
+        end
+    end)
+    
+    local ScreenGui = Instance.new("ScreenGui")
+    ScreenGui.Name = "CustomMenu"
+    ScreenGui.Parent = LocalPlayer.PlayerGui
+    ScreenGui.ResetOnSpawn = false
+    ScreenGui.DisplayOrder = 999
+    
+    -- Меньшая панель (300x280)
+    local MainFrame = Instance.new("Frame")
+    MainFrame.Size = UDim2.new(0, 300, 0, 310)
+    MainFrame.Position = UDim2.new(0, 20, 0, 40)
+    MainFrame.BackgroundColor3 = COLORS.BgDark
+    MainFrame.BorderSizePixel = 0
+    MainFrame.Parent = ScreenGui
+    Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 14)
+    
+    local mainStroke = Instance.new("UIStroke")
+    mainStroke.Color = COLORS.Accent
+    mainStroke.Thickness = 1.5
+    mainStroke.Transparency = 0.7
+    mainStroke.Parent = MainFrame
+    
+    -- Заголовок (перетаскиваемый)
+    local Title = Instance.new("TextButton")
+    Title.Size = UDim2.new(1, 0, 0, 30)
+    Title.BackgroundColor3 = COLORS.BgPanel
+    Title.BorderSizePixel = 0
+    Title.Text = "🔫 TRIGGERBOT  ✥"
+    Title.TextColor3 = COLORS.Text
+    Title.TextSize = 14
+    Title.Font = Enum.Font.GothamBold
+    Title.Parent = MainFrame
+    local titleCorner = Instance.new("UICorner", Title)
+    titleCorner.CornerRadius = UDim.new(0, 14)
+    
+    MakeDraggable(MainFrame, Title)
+    
+    -- ===== 3 КРУЖКА (Trigger / ESP / Fly) =====
+    local circleSize = 60
+    local circleSpacing = 20
+    local totalWidth = circleSize * 3 + circleSpacing * 2
+    local startX = (300 - totalWidth) / 2
+    
+    local circles = {}
+    local function CreateCircle(xPos, text, getState, keybind, toggleFunc)
+        local container = Instance.new("Frame")
+        container.Size = UDim2.new(0, circleSize, 0, circleSize + 30)
+        container.Position = UDim2.new(0, xPos, 0, 45)
+        container.BackgroundTransparency = 1
+        container.Parent = MainFrame
+        
+        -- Круг
+        local circleFrame = Instance.new("Frame")
+        circleFrame.Size = UDim2.new(0, circleSize, 0, circleSize)
+        circleFrame.Position = UDim2.new(0, 0, 0, 0)
+        circleFrame.BackgroundColor3 = COLORS.BgSection
+        circleFrame.BorderSizePixel = 0
+        circleFrame.Parent = container
+        Instance.new("UICorner", circleFrame).CornerRadius = UDim.new(1, 0)
+        
+        local stroke = Instance.new("UIStroke")
+        stroke.Color = getState() and COLORS.Accent or COLORS.Disabled
+        stroke.Thickness = 3
+        stroke.Transparency = 0.2
+        stroke.Parent = circleFrame
+        
+        -- Текст внутри
+        local statusText = Instance.new("TextLabel")
+        statusText.Size = UDim2.new(1, 0, 1, 0)
+        statusText.BackgroundTransparency = 1
+        statusText.Text = getState() and "ON" or "OFF"
+        statusText.TextColor3 = getState() and COLORS.Accent or COLORS.Disabled
+        statusText.TextSize = 14
+        statusText.Font = Enum.Font.GothamBold
+        statusText.Parent = circleFrame
+        
+        -- Название снизу
+        local nameLabel = Instance.new("TextLabel")
+        nameLabel.Size = UDim2.new(1, 0, 0, 15)
+        nameLabel.Position = UDim2.new(0, 0, 1, -20)
+        nameLabel.BackgroundTransparency = 1
+        nameLabel.Text = text
+        nameLabel.TextColor3 = COLORS.Text
+        nameLabel.TextSize = 10
+        nameLabel.Font = Enum.Font.GothamBold
+        nameLabel.TextXAlignment = Enum.TextXAlignment.Center
+        nameLabel.Parent = container
+        
+        -- Клавиша снизу
+        local keyLabel = Instance.new("TextLabel")
+        keyLabel.Size = UDim2.new(1, 0, 0, 12)
+        keyLabel.Position = UDim2.new(0, 0, 1, -10)
+        keyLabel.BackgroundTransparency = 1
+        keyLabel.Text = keybind
+        keyLabel.TextColor3 = COLORS.TextDim
+        keyLabel.TextSize = 9
+        keyLabel.Font = Enum.Font.Gotham
+        keyLabel.TextXAlignment = Enum.TextXAlignment.Center
+        keyLabel.Parent = container
+        
+        -- Клик
+        local clickBtn = Instance.new("TextButton")
+        clickBtn.Size = UDim2.new(0, circleSize, 0, circleSize)
+        clickBtn.BackgroundTransparency = 1
+        clickBtn.Text = ""
+        clickBtn.Parent = container
+        clickBtn.MouseButton1Click:Connect(function()
+            if toggleFunc then
+                toggleFunc()
+                local state = getState()
+                statusText.Text = state and "ON" or "OFF"
+                statusText.TextColor3 = state and COLORS.Accent or COLORS.Disabled
+                stroke.Color = state and COLORS.Accent or COLORS.Disabled
+            end
+        end)
+        
+        return {
+            Update = function()
+                local state = getState()
+                statusText.Text = state and "ON" or "OFF"
+                statusText.TextColor3 = state and COLORS.Accent or COLORS.Disabled
+                stroke.Color = state and COLORS.Accent or COLORS.Disabled
+            end
+        }
+    end
+    
+    circles.trigger = CreateCircle(startX, "TRIGGER", function() return Settings.TriggerBot end, "F1", ToggleTrigger)
+    circles.esp = CreateCircle(startX + circleSize + circleSpacing, "ESP", function() return ESPEnabled end, "F2", ToggleESP)
+    circles.fly = CreateCircle(startX + (circleSize + circleSpacing) * 2, "FLY", function() return FlyEnabled end, "F4", ToggleFly)
+    
+    -- ===== ЗАГОЛОВОК "CONTROL PANEL" =====
+    local SectionTitle = Instance.new("TextLabel")
+    SectionTitle.Size = UDim2.new(1, -20, 0, 18)
+    SectionTitle.Position = UDim2.new(0, 10, 0, 140)
+    SectionTitle.BackgroundTransparency = 1
+    SectionTitle.Text = "⚙️ CONTROL PANEL"
+    SectionTitle.TextColor3 = COLORS.Text
+    SectionTitle.TextSize = 11
+    SectionTitle.Font = Enum.Font.GothamBold
+    SectionTitle.TextXAlignment = Enum.TextXAlignment.Left
+    SectionTitle.Parent = MainFrame
+    
+    -- ===== СПИСОК ПЕРЕКЛЮЧАТЕЛЕЙ (КОМПАКТНЫЙ) =====
+    local ToggleContainer = Instance.new("Frame")
+    ToggleContainer.Size = UDim2.new(1, -20, 0, 105)
+    ToggleContainer.Position = UDim2.new(0, 10, 0, 162)
+    ToggleContainer.BackgroundColor3 = COLORS.BgSection
+    ToggleContainer.BorderSizePixel = 0
+    ToggleContainer.Parent = MainFrame
+    Instance.new("UICorner", ToggleContainer).CornerRadius = UDim.new(0, 10)
+    
+    local indicators = {}
+    local function CreateToggleRow(yPos, text, keybind, getValue, toggleFunc)
+        local row = Instance.new("Frame")
+        row.Size = UDim2.new(1, -16, 0, 32)
+        row.Position = UDim2.new(0, 8, 0, yPos)
+        row.BackgroundTransparency = 1
+        row.Parent = ToggleContainer
+        
+        local colorBar = Instance.new("Frame")
+        colorBar.Size = UDim2.new(0, 3, 0, 18)
+        colorBar.Position = UDim2.new(0, 0, 0.5, -9)
+        colorBar.BackgroundColor3 = getValue() and COLORS.Accent or COLORS.Disabled
+        colorBar.BorderSizePixel = 0
+        colorBar.Parent = row
+        Instance.new("UICorner", colorBar).CornerRadius = UDim.new(1, 0)
+        
+        local label = Instance.new("TextLabel")
+        label.Size = UDim2.new(0.55, 0, 1, 0)
+        label.Position = UDim2.new(0, 10, 0, 0)
+        label.BackgroundTransparency = 1
+        label.Text = text
+        label.TextColor3 = COLORS.Text
+        label.TextSize = 11
+        label.Font = Enum.Font.GothamBold
+        label.TextXAlignment = Enum.TextXAlignment.Left
+        label.Parent = row
+        
+        local keyLabel = Instance.new("TextLabel")
+        keyLabel.Size = UDim2.new(0, 40, 1, 0)
+        keyLabel.Position = UDim2.new(0.55, 0, 0, 0)
+        keyLabel.BackgroundTransparency = 1
+        keyLabel.Text = "[" .. keybind .. "]"
+        keyLabel.TextColor3 = COLORS.TextDim
+        keyLabel.TextSize = 10
+        keyLabel.Font = Enum.Font.Gotham
+        keyLabel.TextXAlignment = Enum.TextXAlignment.Right
+        keyLabel.Parent = row
+        
+        local indicator = CreateModernIndicator(row, getValue)
+        
+        local clickBtn = Instance.new("TextButton")
+        clickBtn.Size = UDim2.new(1, 0, 1, 0)
+        clickBtn.BackgroundTransparency = 1
+        clickBtn.Text = ""
+        clickBtn.Parent = row
+        clickBtn.MouseButton1Click:Connect(function()
+            if toggleFunc then
+                toggleFunc()
+                indicator.Update()
+                colorBar.BackgroundColor3 = getValue() and COLORS.Accent or COLORS.Disabled
+            end
+        end)
+        
+        return {Indicator = indicator, ColorBar = colorBar}
+    end
+    
+    indicators.wall = CreateToggleRow(5, "WallCheck", "F6", function() return Settings.WallCheck end, ToggleWall)
+    indicators.aim = CreateToggleRow(40, "Aim Assist", "F5", function() return Settings.AimAssist end, ToggleAim)
+    indicators.ignore = CreateToggleRow(75, "Ignore List", "F3", function() return IgnoreListEnabled and #IgnoreList > 0 end, ToggleIgnoreList)
+    
+    -- ===== КНОПКИ ВНИЗУ =====
+    local PlayersBtn = Instance.new("TextButton")
+    PlayersBtn.Size = UDim2.new(0.32, -5, 0, 28)
+    PlayersBtn.Position = UDim2.new(0, 10, 1, -38)
+    PlayersBtn.BackgroundColor3 = COLORS.AccentDark
+    PlayersBtn.Text = "👥 F10"
+    PlayersBtn.TextColor3 = COLORS.Text
+    PlayersBtn.TextSize = 11
+    PlayersBtn.Font = Enum.Font.GothamBold
+    PlayersBtn.Parent = MainFrame
+    Instance.new("UICorner", PlayersBtn).CornerRadius = UDim.new(0, 6)
+    
+    PlayersBtn.MouseButton1Click:Connect(function()
+        if PlayerPickerPanel then PlayerPickerPanel.Toggle() end
+    end)
+    
+    local SettingsBtn = Instance.new("TextButton")
+    SettingsBtn.Size = UDim2.new(0.32, -5, 0, 28)
+    SettingsBtn.Position = UDim2.new(0.34, 0, 1, -38)
+    SettingsBtn.BackgroundColor3 = COLORS.BgSection
+    SettingsBtn.Text = "⚙️ INS"
+    SettingsBtn.TextColor3 = COLORS.Text
+    SettingsBtn.TextSize = 11
+    SettingsBtn.Font = Enum.Font.GothamBold
+    SettingsBtn.Parent = MainFrame
+    Instance.new("UICorner", SettingsBtn).CornerRadius = UDim.new(0, 6)
+    
+    SettingsBtn.MouseButton1Click:Connect(function()
+        if SettingsPanel then SettingsPanel.Toggle() end
+    end)
+    
+    local DeleteBtn = Instance.new("TextButton")
+    DeleteBtn.Size = UDim2.new(0.32, -5, 0, 28)
+    DeleteBtn.Position = UDim2.new(0.68, 0, 1, -38)
+    DeleteBtn.BackgroundColor3 = Color3.fromRGB(60, 20, 20)
+    DeleteBtn.Text = "🗑 DEL"
+    DeleteBtn.TextColor3 = COLORS.Error
+    DeleteBtn.TextSize = 11
+    DeleteBtn.Font = Enum.Font.GothamBold
+    DeleteBtn.Parent = MainFrame
+    Instance.new("UICorner", DeleteBtn).CornerRadius = UDim.new(0, 6)
+    
+    DeleteBtn.MouseButton1Click:Connect(function()
+        DeleteScript()
+    end)
+    
+    local function UpdateIndicators()
+        circles.trigger.Update()
+        circles.esp.Update()
+        circles.fly.Update()
+        
+        indicators.wall.Indicator.Update()
+        indicators.aim.Indicator.Update()
+        indicators.ignore.Indicator.Update()
+        
+        indicators.wall.ColorBar.BackgroundColor3 = Settings.WallCheck and COLORS.Accent or COLORS.Disabled
+        indicators.aim.ColorBar.BackgroundColor3 = Settings.AimAssist and COLORS.Accent or COLORS.Disabled
+        indicators.ignore.ColorBar.BackgroundColor3 = (IgnoreListEnabled and #IgnoreList > 0) and COLORS.Accent or COLORS.Disabled
+    end
+    
+    return {
+        Update = function() UpdateIndicators() end,
+        Destroy = function() ScreenGui:Destroy() end
+    }
+end
+
+-- =====================================================
 -- === F10 МЕНЮ ===
 -- =====================================================
 local function CreatePlayerPicker()
@@ -957,44 +1268,48 @@ local function CreatePlayerPicker()
     local MainFrame = Instance.new("Frame")
     MainFrame.Size = UDim2.new(0, 850, 0, 450)
     MainFrame.Position = UDim2.new(0.5, -425, 0.5, -225)
-    MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
-    MainFrame.BorderColor3 = Color3.fromRGB(60, 60, 60)
-    MainFrame.BorderSizePixel = 1
+    MainFrame.BackgroundColor3 = COLORS.BgDark
+    MainFrame.BorderSizePixel = 0
     MainFrame.Visible = false
     MainFrame.Parent = ScreenGui
-    Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 10)
+    Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 16)
+    
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = COLORS.Accent
+    stroke.Thickness = 1.5
+    stroke.Transparency = 0.7
+    stroke.Parent = MainFrame
     
     local Title = Instance.new("TextButton")
-    Title.Size = UDim2.new(1, 0, 0, 35)
-    Title.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+    Title.Size = UDim2.new(1, 0, 0, 40)
+    Title.BackgroundColor3 = COLORS.BgPanel
     Title.BorderSizePixel = 0
-    Title.Text = "👥 ВЫБОР ТИММЕЙТОВ / ВРАГОВ [F10]  ✥ Перетащи меня"
-    Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+    Title.Text = "👥 PLAYERS MANAGEMENT  [F10]  ✥"
+    Title.TextColor3 = COLORS.Text
     Title.TextSize = 14
     Title.Font = Enum.Font.GothamBold
     Title.Parent = MainFrame
-    Instance.new("UICorner", Title).CornerRadius = UDim.new(0, 10)
+    Instance.new("UICorner", Title).CornerRadius = UDim.new(0, 16)
     
     MakeDraggable(MainFrame, Title)
     
     local TeamFrame = Instance.new("Frame")
-    TeamFrame.Size = UDim2.new(0.31, -10, 1, -110)
-    TeamFrame.Position = UDim2.new(0, 10, 0, 70)
-    TeamFrame.BackgroundColor3 = Color3.fromRGB(15, 25, 15)
-    TeamFrame.BorderColor3 = Color3.fromRGB(0, 200, 0)
-    TeamFrame.BorderSizePixel = 1
+    TeamFrame.Size = UDim2.new(0.31, -10, 1, -120)
+    TeamFrame.Position = UDim2.new(0, 10, 0, 80)
+    TeamFrame.BackgroundColor3 = COLORS.BgSection
+    TeamFrame.BorderSizePixel = 0
     TeamFrame.Parent = MainFrame
-    Instance.new("UICorner", TeamFrame).CornerRadius = UDim.new(0, 8)
+    Instance.new("UICorner", TeamFrame).CornerRadius = UDim.new(0, 12)
     
     local TeamTitle = Instance.new("TextLabel")
     TeamTitle.Size = UDim2.new(1, 0, 0, 30)
-    TeamTitle.BackgroundColor3 = Color3.fromRGB(0, 80, 0)
-    TeamTitle.Text = "🛡️ СВОИ (0)"
-    TeamTitle.TextColor3 = Color3.fromRGB(0, 255, 0)
-    TeamTitle.TextSize = 14
+    TeamTitle.BackgroundColor3 = COLORS.AccentDark
+    TeamTitle.Text = "🛡️ TEAMMATES (0)"
+    TeamTitle.TextColor3 = COLORS.Text
+    TeamTitle.TextSize = 13
     TeamTitle.Font = Enum.Font.GothamBold
     TeamTitle.Parent = TeamFrame
-    Instance.new("UICorner", TeamTitle).CornerRadius = UDim.new(0, 8)
+    Instance.new("UICorner", TeamTitle).CornerRadius = UDim.new(0, 12)
     
     local TeamScroll = Instance.new("ScrollingFrame")
     TeamScroll.Size = UDim2.new(1, -10, 1, -40)
@@ -1002,6 +1317,7 @@ local function CreatePlayerPicker()
     TeamScroll.BackgroundTransparency = 1
     TeamScroll.BorderSizePixel = 0
     TeamScroll.ScrollBarThickness = 6
+    TeamScroll.ScrollBarImageColor3 = COLORS.Accent
     TeamScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
     TeamScroll.Parent = TeamFrame
     
@@ -1010,23 +1326,22 @@ local function CreatePlayerPicker()
     TeamLayout.Parent = TeamScroll
     
     local AllFrame = Instance.new("Frame")
-    AllFrame.Size = UDim2.new(0.34, -10, 1, -110)
-    AllFrame.Position = UDim2.new(0.33, 0, 0, 70)
-    AllFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 35)
-    AllFrame.BorderColor3 = Color3.fromRGB(100, 100, 200)
-    AllFrame.BorderSizePixel = 1
+    AllFrame.Size = UDim2.new(0.34, -10, 1, -120)
+    AllFrame.Position = UDim2.new(0.33, 0, 0, 80)
+    AllFrame.BackgroundColor3 = COLORS.BgSection
+    AllFrame.BorderSizePixel = 0
     AllFrame.Parent = MainFrame
-    Instance.new("UICorner", AllFrame).CornerRadius = UDim.new(0, 8)
+    Instance.new("UICorner", AllFrame).CornerRadius = UDim.new(0, 12)
     
     local AllTitle = Instance.new("TextLabel")
     AllTitle.Size = UDim2.new(1, 0, 0, 30)
-    AllTitle.BackgroundColor3 = Color3.fromRGB(40, 40, 80)
-    AllTitle.Text = "👥 ВСЕ ИГРОКИ"
-    AllTitle.TextColor3 = Color3.fromRGB(150, 150, 255)
-    AllTitle.TextSize = 14
+    AllTitle.BackgroundColor3 = COLORS.BgPanel
+    AllTitle.Text = "👥 ALL PLAYERS"
+    AllTitle.TextColor3 = COLORS.Accent
+    AllTitle.TextSize = 13
     AllTitle.Font = Enum.Font.GothamBold
     AllTitle.Parent = AllFrame
-    Instance.new("UICorner", AllTitle).CornerRadius = UDim.new(0, 8)
+    Instance.new("UICorner", AllTitle).CornerRadius = UDim.new(0, 12)
     
     local AllScroll = Instance.new("ScrollingFrame")
     AllScroll.Size = UDim2.new(1, -10, 1, -40)
@@ -1034,6 +1349,7 @@ local function CreatePlayerPicker()
     AllScroll.BackgroundTransparency = 1
     AllScroll.BorderSizePixel = 0
     AllScroll.ScrollBarThickness = 6
+    AllScroll.ScrollBarImageColor3 = COLORS.Accent
     AllScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
     AllScroll.Parent = AllFrame
     
@@ -1042,23 +1358,22 @@ local function CreatePlayerPicker()
     AllLayout.Parent = AllScroll
     
     local EnemyFrame = Instance.new("Frame")
-    EnemyFrame.Size = UDim2.new(0.31, -10, 1, -110)
-    EnemyFrame.Position = UDim2.new(0.69, 0, 0, 70)
-    EnemyFrame.BackgroundColor3 = Color3.fromRGB(25, 15, 15)
-    EnemyFrame.BorderColor3 = Color3.fromRGB(200, 0, 0)
-    EnemyFrame.BorderSizePixel = 1
+    EnemyFrame.Size = UDim2.new(0.31, -10, 1, -120)
+    EnemyFrame.Position = UDim2.new(0.69, 0, 0, 80)
+    EnemyFrame.BackgroundColor3 = COLORS.BgSection
+    EnemyFrame.BorderSizePixel = 0
     EnemyFrame.Parent = MainFrame
-    Instance.new("UICorner", EnemyFrame).CornerRadius = UDim.new(0, 8)
+    Instance.new("UICorner", EnemyFrame).CornerRadius = UDim.new(0, 12)
     
     local EnemyTitle = Instance.new("TextLabel")
     EnemyTitle.Size = UDim2.new(1, 0, 0, 30)
-    EnemyTitle.BackgroundColor3 = Color3.fromRGB(80, 0, 0)
-    EnemyTitle.Text = "❌ ВРАГИ (0)"
-    EnemyTitle.TextColor3 = Color3.fromRGB(255, 80, 80)
-    EnemyTitle.TextSize = 14
+    EnemyTitle.BackgroundColor3 = Color3.fromRGB(80, 20, 20)
+    EnemyTitle.Text = "❌ ENEMIES (0)"
+    EnemyTitle.TextColor3 = COLORS.Error
+    EnemyTitle.TextSize = 13
     EnemyTitle.Font = Enum.Font.GothamBold
     EnemyTitle.Parent = EnemyFrame
-    Instance.new("UICorner", EnemyTitle).CornerRadius = UDim.new(0, 8)
+    Instance.new("UICorner", EnemyTitle).CornerRadius = UDim.new(0, 12)
     
     local EnemyScroll = Instance.new("ScrollingFrame")
     EnemyScroll.Size = UDim2.new(1, -10, 1, -40)
@@ -1066,6 +1381,7 @@ local function CreatePlayerPicker()
     EnemyScroll.BackgroundTransparency = 1
     EnemyScroll.BorderSizePixel = 0
     EnemyScroll.ScrollBarThickness = 6
+    EnemyScroll.ScrollBarImageColor3 = COLORS.Error
     EnemyScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
     EnemyScroll.Parent = EnemyFrame
     
@@ -1076,17 +1392,17 @@ local function CreatePlayerPicker()
     local function CreateTeamCard(player, parentFrame, isTeam)
         local card = Instance.new("TextButton")
         card.Size = UDim2.new(1, -5, 0, 50)
-        card.BackgroundColor3 = isTeam and Color3.fromRGB(0, 60, 0) or Color3.fromRGB(60, 0, 0)
+        card.BackgroundColor3 = isTeam and COLORS.AccentDark or Color3.fromRGB(70, 20, 20)
         card.Text = ""
         card.Parent = parentFrame
-        Instance.new("UICorner", card).CornerRadius = UDim.new(0, 6)
+        Instance.new("UICorner", card).CornerRadius = UDim.new(0, 8)
         
         local displayLabel = Instance.new("TextLabel")
         displayLabel.Size = UDim2.new(1, -10, 0, 18)
         displayLabel.Position = UDim2.new(0, 5, 0, 2)
         displayLabel.BackgroundTransparency = 1
         displayLabel.Text = "🎭 " .. player.DisplayName
-        displayLabel.TextColor3 = Color3.fromRGB(255, 255, 100)
+        displayLabel.TextColor3 = COLORS.Text
         displayLabel.TextSize = 12
         displayLabel.Font = Enum.Font.GothamBold
         displayLabel.TextXAlignment = Enum.TextXAlignment.Left
@@ -1098,17 +1414,12 @@ local function CreatePlayerPicker()
         usernameLabel.Position = UDim2.new(0, 5, 0, 20)
         usernameLabel.BackgroundTransparency = 1
         usernameLabel.Text = "@" .. player.Name
-        usernameLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
+        usernameLabel.TextColor3 = COLORS.TextDim
         usernameLabel.TextSize = 10
         usernameLabel.Font = Enum.Font.Gotham
         usernameLabel.TextXAlignment = Enum.TextXAlignment.Left
         usernameLabel.TextTruncate = Enum.TextTruncate.AtEnd
         usernameLabel.Parent = card
-        
-        local infoLabel = Instance.new("TextLabel")
-        infoLabel.Size = UDim2.new(1, -10, 0, 12)
-        infoLabel.Position = UDim2.new(0, 5, 0, 35)
-        infoLabel.BackgroundTransparency = 1
         
         local hpText = "?"
         local char = player.Character
@@ -1117,8 +1428,12 @@ local function CreatePlayerPicker()
             if humanoid then hpText = math.floor(humanoid.Health) .. " HP" end
         end
         
-        infoLabel.Text = hpText .. " | клик → убрать"
-        infoLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
+        local infoLabel = Instance.new("TextLabel")
+        infoLabel.Size = UDim2.new(1, -10, 0, 12)
+        infoLabel.Position = UDim2.new(0, 5, 0, 35)
+        infoLabel.BackgroundTransparency = 1
+        infoLabel.Text = hpText .. " | click to remove"
+        infoLabel.TextColor3 = COLORS.TextDim
         infoLabel.TextSize = 9
         infoLabel.Font = Enum.Font.Gotham
         infoLabel.TextXAlignment = Enum.TextXAlignment.Left
@@ -1127,21 +1442,14 @@ local function CreatePlayerPicker()
         card.MouseButton1Click:Connect(function()
             if isTeam then
                 ManualTeammates[player.Name] = nil
-                Notify("Убран из СВОИХ: " .. player.DisplayName, Color3.fromRGB(255, 150, 150))
+                Notify("Removed from TEAM: " .. player.DisplayName, COLORS.Warning)
             else
                 ManualEnemies[player.Name] = nil
-                Notify("Убран из ВРАГОВ: " .. player.DisplayName, Color3.fromRGB(255, 150, 150))
+                Notify("Removed from ENEMIES: " .. player.DisplayName, COLORS.Warning)
             end
             if PlayerPickerPanel and PlayerPickerPanel.Refresh then
                 PlayerPickerPanel.Refresh()
             end
-        end)
-        
-        card.MouseEnter:Connect(function()
-            card.BackgroundColor3 = isTeam and Color3.fromRGB(0, 90, 0) or Color3.fromRGB(90, 0, 0)
-        end)
-        card.MouseLeave:Connect(function()
-            card.BackgroundColor3 = isTeam and Color3.fromRGB(0, 60, 0) or Color3.fromRGB(60, 0, 0)
         end)
         
         return card
@@ -1150,16 +1458,16 @@ local function CreatePlayerPicker()
     local function CreateAllCard(player, parentFrame)
         local card = Instance.new("Frame")
         card.Size = UDim2.new(1, -5, 0, 70)
-        card.BackgroundColor3 = Color3.fromRGB(30, 30, 45)
+        card.BackgroundColor3 = COLORS.BgPanel
         card.Parent = parentFrame
-        Instance.new("UICorner", card).CornerRadius = UDim.new(0, 6)
+        Instance.new("UICorner", card).CornerRadius = UDim.new(0, 8)
         
         local displayLabel = Instance.new("TextLabel")
         displayLabel.Size = UDim2.new(1, -10, 0, 18)
         displayLabel.Position = UDim2.new(0, 5, 0, 2)
         displayLabel.BackgroundTransparency = 1
         displayLabel.Text = "🎭 " .. player.DisplayName
-        displayLabel.TextColor3 = Color3.fromRGB(255, 255, 100)
+        displayLabel.TextColor3 = COLORS.Text
         displayLabel.TextSize = 12
         displayLabel.Font = Enum.Font.GothamBold
         displayLabel.TextXAlignment = Enum.TextXAlignment.Left
@@ -1171,7 +1479,7 @@ local function CreatePlayerPicker()
         usernameLabel.Position = UDim2.new(0, 5, 0, 20)
         usernameLabel.BackgroundTransparency = 1
         usernameLabel.Text = "@" .. player.Name
-        usernameLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
+        usernameLabel.TextColor3 = COLORS.TextDim
         usernameLabel.TextSize = 10
         usernameLabel.Font = Enum.Font.Gotham
         usernameLabel.TextXAlignment = Enum.TextXAlignment.Left
@@ -1184,20 +1492,20 @@ local function CreatePlayerPicker()
         statusLabel.BackgroundTransparency = 1
         
         if IsIgnoredAsTeammate(player.Name) then
-            statusLabel.Text = "🛡️ СВОЙ (игнор-лист)"
-            statusLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
+            statusLabel.Text = "🛡️ TEAM (ignore list)"
+            statusLabel.TextColor3 = COLORS.Success
         elseif ManualTeammates[player.Name] then
-            statusLabel.Text = "🛡️ СВОЙ"
-            statusLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
+            statusLabel.Text = "🛡️ TEAM"
+            statusLabel.TextColor3 = COLORS.Success
         elseif ManualEnemies[player.Name] then
-            statusLabel.Text = "❌ ВРАГ"
-            statusLabel.TextColor3 = Color3.fromRGB(255, 80, 80)
+            statusLabel.Text = "❌ ENEMY"
+            statusLabel.TextColor3 = COLORS.Error
         elseif IsStandardTeammate(player) then
-            statusLabel.Text = "🛡️ тиммейт (команда)"
-            statusLabel.TextColor3 = Color3.fromRGB(150, 255, 150)
+            statusLabel.Text = "🛡️ TEAM (standard)"
+            statusLabel.TextColor3 = COLORS.Success
         else
-            statusLabel.Text = "❔ неизвестно"
-            statusLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
+            statusLabel.Text = "❔ UNKNOWN"
+            statusLabel.TextColor3 = COLORS.TextDim
         end
         
         statusLabel.TextSize = 10
@@ -1208,9 +1516,9 @@ local function CreatePlayerPicker()
         local TeamBtn = Instance.new("TextButton")
         TeamBtn.Size = UDim2.new(0.45, -5, 0, 18)
         TeamBtn.Position = UDim2.new(0, 5, 1, -22)
-        TeamBtn.BackgroundColor3 = Color3.fromRGB(0, 100, 0)
-        TeamBtn.Text = "🛡️ СВОЙ"
-        TeamBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        TeamBtn.BackgroundColor3 = COLORS.AccentDark
+        TeamBtn.Text = "🛡️ TEAM"
+        TeamBtn.TextColor3 = COLORS.Text
         TeamBtn.TextSize = 10
         TeamBtn.Font = Enum.Font.GothamBold
         TeamBtn.Parent = card
@@ -1219,9 +1527,9 @@ local function CreatePlayerPicker()
         local EnemyBtn = Instance.new("TextButton")
         EnemyBtn.Size = UDim2.new(0.45, -5, 0, 18)
         EnemyBtn.Position = UDim2.new(0.5, 0, 1, -22)
-        EnemyBtn.BackgroundColor3 = Color3.fromRGB(100, 0, 0)
-        EnemyBtn.Text = "❌ ВРАГ"
-        EnemyBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        EnemyBtn.BackgroundColor3 = Color3.fromRGB(70, 20, 20)
+        EnemyBtn.Text = "❌ ENEMY"
+        EnemyBtn.TextColor3 = COLORS.Error
         EnemyBtn.TextSize = 10
         EnemyBtn.Font = Enum.Font.GothamBold
         EnemyBtn.Parent = card
@@ -1230,7 +1538,7 @@ local function CreatePlayerPicker()
         TeamBtn.MouseButton1Click:Connect(function()
             ManualTeammates[player.Name] = true
             ManualEnemies[player.Name] = nil
-            Notify("🛡️ " .. player.DisplayName .. " → СВОИ", Color3.fromRGB(0, 255, 0))
+            Notify("🛡️ " .. player.DisplayName .. " → TEAM", COLORS.Success)
             if PlayerPickerPanel and PlayerPickerPanel.Refresh then
                 PlayerPickerPanel.Refresh()
             end
@@ -1239,16 +1547,11 @@ local function CreatePlayerPicker()
         EnemyBtn.MouseButton1Click:Connect(function()
             ManualEnemies[player.Name] = true
             ManualTeammates[player.Name] = nil
-            Notify("❌ " .. player.DisplayName .. " → ВРАГИ", Color3.fromRGB(255, 50, 50))
+            Notify("❌ " .. player.DisplayName .. " → ENEMY", COLORS.Error)
             if PlayerPickerPanel and PlayerPickerPanel.Refresh then
                 PlayerPickerPanel.Refresh()
             end
         end)
-        
-        TeamBtn.MouseEnter:Connect(function() TeamBtn.BackgroundColor3 = Color3.fromRGB(0, 150, 0) end)
-        TeamBtn.MouseLeave:Connect(function() TeamBtn.BackgroundColor3 = Color3.fromRGB(0, 100, 0) end)
-        EnemyBtn.MouseEnter:Connect(function() EnemyBtn.BackgroundColor3 = Color3.fromRGB(150, 0, 0) end)
-        EnemyBtn.MouseLeave:Connect(function() EnemyBtn.BackgroundColor3 = Color3.fromRGB(100, 0, 0) end)
         
         return card
     end
@@ -1288,9 +1591,9 @@ local function CreatePlayerPicker()
             CreateAllCard(player, AllScroll)
         end
         
-        TeamTitle.Text = "🛡️ СВОИ (" .. teamCount .. ")"
-        EnemyTitle.Text = "❌ ВРАГИ (" .. enemyCount .. ")"
-        AllTitle.Text = "👥 ВСЕ ИГРОКИ (" .. (#Players:GetPlayers() - 1) .. ")"
+        TeamTitle.Text = "🛡️ TEAMMATES (" .. teamCount .. ")"
+        EnemyTitle.Text = "❌ ENEMIES (" .. enemyCount .. ")"
+        AllTitle.Text = "👥 ALL PLAYERS (" .. (#Players:GetPlayers() - 1) .. ")"
         
         TeamScroll.CanvasSize = UDim2.new(0, 0, 0, teamCount * 60)
         EnemyScroll.CanvasSize = UDim2.new(0, 0, 0, enemyCount * 60)
@@ -1300,10 +1603,10 @@ local function CreatePlayerPicker()
     local ClearAllBtn = Instance.new("TextButton")
     ClearAllBtn.Size = UDim2.new(0, 140, 0, 28)
     ClearAllBtn.Position = UDim2.new(0, 10, 1, -38)
-    ClearAllBtn.BackgroundColor3 = Color3.fromRGB(60, 40, 40)
-    ClearAllBtn.Text = "🗑 ОЧИСТИТЬ ВСЁ"
-    ClearAllBtn.TextColor3 = Color3.fromRGB(255, 200, 200)
-    ClearAllBtn.TextSize = 12
+    ClearAllBtn.BackgroundColor3 = Color3.fromRGB(60, 20, 20)
+    ClearAllBtn.Text = "🗑 CLEAR ALL"
+    ClearAllBtn.TextColor3 = COLORS.Error
+    ClearAllBtn.TextSize = 11
     ClearAllBtn.Font = Enum.Font.GothamBold
     ClearAllBtn.Parent = MainFrame
     Instance.new("UICorner", ClearAllBtn).CornerRadius = UDim.new(0, 6)
@@ -1311,20 +1614,17 @@ local function CreatePlayerPicker()
     ClearAllBtn.MouseButton1Click:Connect(function()
         ManualTeammates = {}
         ManualEnemies = {}
-        Notify("🗑 Все списки очищены", Color3.fromRGB(255, 150, 150))
+        Notify("All lists cleared", COLORS.Warning)
         Refresh()
     end)
-    
-    ClearAllBtn.MouseEnter:Connect(function() ClearAllBtn.BackgroundColor3 = Color3.fromRGB(80, 50, 50) end)
-    ClearAllBtn.MouseLeave:Connect(function() ClearAllBtn.BackgroundColor3 = Color3.fromRGB(60, 40, 40) end)
     
     local RefreshBtn = Instance.new("TextButton")
     RefreshBtn.Size = UDim2.new(0, 140, 0, 28)
     RefreshBtn.Position = UDim2.new(0.5, -70, 1, -38)
-    RefreshBtn.BackgroundColor3 = Color3.fromRGB(40, 60, 40)
-    RefreshBtn.Text = "🔄 ОБНОВИТЬ"
-    RefreshBtn.TextColor3 = Color3.fromRGB(200, 255, 200)
-    RefreshBtn.TextSize = 12
+    RefreshBtn.BackgroundColor3 = COLORS.AccentDark
+    RefreshBtn.Text = "🔄 REFRESH"
+    RefreshBtn.TextColor3 = COLORS.Text
+    RefreshBtn.TextSize = 11
     RefreshBtn.Font = Enum.Font.GothamBold
     RefreshBtn.Parent = MainFrame
     Instance.new("UICorner", RefreshBtn).CornerRadius = UDim.new(0, 6)
@@ -1333,16 +1633,13 @@ local function CreatePlayerPicker()
         Refresh()
     end)
     
-    RefreshBtn.MouseEnter:Connect(function() RefreshBtn.BackgroundColor3 = Color3.fromRGB(60, 80, 60) end)
-    RefreshBtn.MouseLeave:Connect(function() RefreshBtn.BackgroundColor3 = Color3.fromRGB(40, 60, 40) end)
-    
     local CloseBtn = Instance.new("TextButton")
     CloseBtn.Size = UDim2.new(0, 140, 0, 28)
     CloseBtn.Position = UDim2.new(1, -150, 1, -38)
-    CloseBtn.BackgroundColor3 = Color3.fromRGB(60, 40, 60)
-    CloseBtn.Text = "✖ ЗАКРЫТЬ"
-    CloseBtn.TextColor3 = Color3.fromRGB(255, 200, 255)
-    CloseBtn.TextSize = 12
+    CloseBtn.BackgroundColor3 = COLORS.BgPanel
+    CloseBtn.Text = "✖ CLOSE"
+    CloseBtn.TextColor3 = COLORS.Text
+    CloseBtn.TextSize = 11
     CloseBtn.Font = Enum.Font.GothamBold
     CloseBtn.Parent = MainFrame
     Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 6)
@@ -1350,9 +1647,6 @@ local function CreatePlayerPicker()
     CloseBtn.MouseButton1Click:Connect(function()
         MainFrame.Visible = false
     end)
-    
-    CloseBtn.MouseEnter:Connect(function() CloseBtn.BackgroundColor3 = Color3.fromRGB(80, 50, 80) end)
-    CloseBtn.MouseLeave:Connect(function() CloseBtn.BackgroundColor3 = Color3.fromRGB(60, 40, 60) end)
     
     return {
         Toggle = function()
@@ -1383,23 +1677,30 @@ local function CreateSettingsPanel()
     ScreenGui.DisplayOrder = 1000
     
     local MainFrame = Instance.new("Frame")
-    MainFrame.Size = UDim2.new(0, 300, 0, 560)
-    MainFrame.Position = UDim2.new(0, 260, 0, 40)
-    MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-    MainFrame.BorderColor3 = Color3.fromRGB(60, 60, 60)
-    MainFrame.BorderSizePixel = 1
+    MainFrame.Size = UDim2.new(0, 320, 0, 600)
+    MainFrame.Position = UDim2.new(0, 520, 0, 40)
+    MainFrame.BackgroundColor3 = COLORS.BgDark
+    MainFrame.BorderSizePixel = 0
     MainFrame.Visible = false
     MainFrame.Parent = ScreenGui
-    Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 10)
+    Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 16)
+    
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = COLORS.Accent
+    stroke.Thickness = 1.5
+    stroke.Transparency = 0.7
+    stroke.Parent = MainFrame
     
     local Title = Instance.new("TextButton")
-    Title.Size = UDim2.new(1, 0, 0, 30)
-    Title.BackgroundTransparency = 1
-    Title.Text = "⚙️ НАСТРОЙКИ (✥ тяни)"
-    Title.TextColor3 = Color3.fromRGB(255, 255, 255)
-    Title.TextSize = 16
+    Title.Size = UDim2.new(1, 0, 0, 40)
+    Title.BackgroundColor3 = COLORS.BgPanel
+    Title.BorderSizePixel = 0
+    Title.Text = "⚙️ SETTINGS  ✥"
+    Title.TextColor3 = COLORS.Text
+    Title.TextSize = 14
     Title.Font = Enum.Font.GothamBold
     Title.Parent = MainFrame
+    Instance.new("UICorner", Title).CornerRadius = UDim.new(0, 16)
     
     MakeDraggable(MainFrame, Title)
     
@@ -1415,9 +1716,9 @@ local function CreateSettingsPanel()
         Label.Size = UDim2.new(0.5, 0, 1, 0)
         Label.BackgroundTransparency = 1
         Label.Text = text
-        Label.TextColor3 = Color3.fromRGB(200, 200, 200)
-        Label.TextSize = 12
-        Label.Font = Enum.Font.Gotham
+        Label.TextColor3 = COLORS.Text
+        Label.TextSize = 11
+        Label.Font = Enum.Font.GothamBold
         Label.TextXAlignment = Enum.TextXAlignment.Left
         Label.Parent = Container
         
@@ -1426,8 +1727,8 @@ local function CreateSettingsPanel()
         ValueLabel.Position = UDim2.new(0.8, 0, 0, 0)
         ValueLabel.BackgroundTransparency = 1
         ValueLabel.Text = string.format(displayFormat, getValue())
-        ValueLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-        ValueLabel.TextSize = 12
+        ValueLabel.TextColor3 = COLORS.Accent
+        ValueLabel.TextSize = 11
         ValueLabel.Font = Enum.Font.GothamBold
         ValueLabel.TextXAlignment = Enum.TextXAlignment.Right
         ValueLabel.Parent = Container
@@ -1435,9 +1736,9 @@ local function CreateSettingsPanel()
         local MinusBtn = Instance.new("TextButton")
         MinusBtn.Size = UDim2.new(0, 22, 1, 0)
         MinusBtn.Position = UDim2.new(0.52, 0, 0, 0)
-        MinusBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
+        MinusBtn.BackgroundColor3 = COLORS.BgSection
         MinusBtn.Text = "−"
-        MinusBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        MinusBtn.TextColor3 = COLORS.Text
         MinusBtn.Font = Enum.Font.GothamBold
         MinusBtn.Parent = Container
         Instance.new("UICorner", MinusBtn).CornerRadius = UDim.new(0, 4)
@@ -1445,9 +1746,9 @@ local function CreateSettingsPanel()
         local PlusBtn = Instance.new("TextButton")
         PlusBtn.Size = UDim2.new(0, 22, 1, 0)
         PlusBtn.Position = UDim2.new(0.58, 0, 0, 0)
-        PlusBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
+        PlusBtn.BackgroundColor3 = COLORS.BgSection
         PlusBtn.Text = "+"
-        PlusBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        PlusBtn.TextColor3 = COLORS.Text
         PlusBtn.Font = Enum.Font.GothamBold
         PlusBtn.Parent = Container
         Instance.new("UICorner", PlusBtn).CornerRadius = UDim.new(0, 4)
@@ -1460,113 +1761,92 @@ local function CreateSettingsPanel()
         
         MinusBtn.MouseButton1Click:Connect(function() UpdateValue(getValue() - (maxVal - minVal) / 20) end)
         PlusBtn.MouseButton1Click:Connect(function() UpdateValue(getValue() + (maxVal - minVal) / 20) end)
-        
-        MinusBtn.MouseEnter:Connect(function() MinusBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 80) end)
-        MinusBtn.MouseLeave:Connect(function() MinusBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 60) end)
-        PlusBtn.MouseEnter:Connect(function() PlusBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 80) end)
-        PlusBtn.MouseLeave:Connect(function() PlusBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 60) end)
     end
     
-    CreateSlider(35, "Плавность", 0.05, 0.95, 
+    CreateSlider(50, "Smoothness", 0.05, 0.95, 
         function() return Settings.Smoothness end, function(v) Settings.Smoothness = v end, "%.2f")
-    CreateSlider(75, "Радиус доводки", 50, 500,
+    CreateSlider(90, "FOV Radius", 50, 500,
         function() return Settings.FOV end, function(v) Settings.FOV = v end, "%.0f")
-    CreateSlider(115, "Радиус триггера", 20, 150,
+    CreateSlider(130, "Trigger Radius", 20, 150,
         function() return Settings.TriggerRadius end, function(v) Settings.TriggerRadius = v end, "%.0f")
-    CreateSlider(155, "Задержка (сек)", 0.01, 0.50,
+    CreateSlider(170, "Shot Delay (s)", 0.01, 0.50,
         function() return Settings.ShotDelay end, function(v) Settings.ShotDelay = v end, "%.2f")
-    CreateSlider(195, "Макс. дистанция", 50, 1000,
+    CreateSlider(210, "Max Distance", 50, 1000,
         function() return Settings.MaxAimDistance end, function(v) Settings.MaxAimDistance = v end, "%.0f")
-    CreateSlider(235, "Смещение прицела", 0, 5,
+    CreateSlider(250, "Aim Offset", 0, 5,
         function() return Settings.AimOffset end, function(v) Settings.AimOffset = v end, "%.1f")
-    CreateSlider(275, "Скорость полета", 5, 100,
+    CreateSlider(290, "Fly Speed", 5, 100,
         function() return Settings.FlySpeed end, function(v) Settings.FlySpeed = v end, "%.0f")
     
     local function CreateToggle(yPos, text, getValue, setValue)
         local Btn = Instance.new("TextButton")
         Btn.Size = UDim2.new(1, -20, 0, 30)
         Btn.Position = UDim2.new(0, 10, 0, yPos)
-        Btn.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+        Btn.BackgroundColor3 = COLORS.BgSection
         Btn.Text = ""
         Btn.Parent = MainFrame
-        Instance.new("UICorner", Btn).CornerRadius = UDim.new(0, 6)
+        Instance.new("UICorner", Btn).CornerRadius = UDim.new(0, 8)
         
         local Lbl = Instance.new("TextLabel")
         Lbl.Size = UDim2.new(0.8, 0, 1, 0)
         Lbl.Position = UDim2.new(0, 10, 0, 0)
         Lbl.BackgroundTransparency = 1
         Lbl.Text = text
-        Lbl.TextColor3 = Color3.fromRGB(255, 255, 255)
-        Lbl.TextSize = 12
+        Lbl.TextColor3 = COLORS.Text
+        Lbl.TextSize = 11
         Lbl.Font = Enum.Font.GothamBold
         Lbl.TextXAlignment = Enum.TextXAlignment.Left
         Lbl.Parent = Btn
         
-        local IndBg = Instance.new("Frame")
-        IndBg.Size = UDim2.new(0, 20, 0, 20)
-        IndBg.Position = UDim2.new(1, -30, 0, 5)
-        IndBg.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-        IndBg.Parent = Btn
-        Instance.new("UICorner", IndBg).CornerRadius = UDim.new(1, 0)
-        
-        local Ind = Instance.new("Frame")
-        Ind.Size = UDim2.new(0, 14, 0, 14)
-        Ind.Position = UDim2.new(0, 3, 0, 3)
-        Ind.BackgroundColor3 = getValue() and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
-        Ind.Parent = IndBg
-        Instance.new("UICorner", Ind).CornerRadius = UDim.new(1, 0)
+        local indicator = CreateModernIndicator(Btn, getValue)
         
         Btn.MouseButton1Click:Connect(function()
             setValue(not getValue())
-            Ind.BackgroundColor3 = getValue() and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
+            indicator.Update()
         end)
-        Btn.MouseEnter:Connect(function() Btn.BackgroundColor3 = Color3.fromRGB(50, 50, 50) end)
-        Btn.MouseLeave:Connect(function() Btn.BackgroundColor3 = Color3.fromRGB(35, 35, 35) end)
     end
     
-    CreateToggle(315, "Не бить своих (стандарт)", 
+    CreateToggle(330, "Standard TeamCheck", 
         function() return Settings.TeamCheck end, function(v) Settings.TeamCheck = v end)
-    CreateToggle(350, "Адаптивный TeamCheck", 
+    CreateToggle(365, "Adaptive TeamCheck", 
         function() return Settings.AdaptiveTeamCheck end, function(v) Settings.AdaptiveTeamCheck = v end)
-    CreateToggle(385, "WallCheck для адаптива", 
+    CreateToggle(400, "Adaptive WallCheck", 
         function() return Settings.AdaptiveWallCheck end, function(v) Settings.AdaptiveWallCheck = v end)
     
     local InfoLabel = Instance.new("TextLabel")
     InfoLabel.Size = UDim2.new(1, -20, 0, 40)
-    InfoLabel.Position = UDim2.new(0, 10, 0, 420)
-    InfoLabel.BackgroundColor3 = Color3.fromRGB(15, 15, 25)
-    InfoLabel.Text = "Врагов: 0 | Своих: 0"
-    InfoLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-    InfoLabel.TextSize = 12
-    InfoLabel.Font = Enum.Font.Gotham
+    InfoLabel.Position = UDim2.new(0, 10, 0, 440)
+    InfoLabel.BackgroundColor3 = COLORS.BgSection
+    InfoLabel.Text = "Enemies: 0 | Team: 0"
+    InfoLabel.TextColor3 = COLORS.Text
+    InfoLabel.TextSize = 11
+    InfoLabel.Font = Enum.Font.GothamBold
     InfoLabel.Parent = MainFrame
-    Instance.new("UICorner", InfoLabel).CornerRadius = UDim.new(0, 6)
+    Instance.new("UICorner", InfoLabel).CornerRadius = UDim.new(0, 8)
     
     local ResetBtn = Instance.new("TextButton")
     ResetBtn.Size = UDim2.new(0.45, 0, 0, 30)
-    ResetBtn.Position = UDim2.new(0.03, 0, 0, 470)
-    ResetBtn.BackgroundColor3 = Color3.fromRGB(60, 40, 40)
-    ResetBtn.Text = "🔄 СБРОС СПИСКОВ"
-    ResetBtn.TextColor3 = Color3.fromRGB(255, 200, 200)
-    ResetBtn.TextSize = 11
+    ResetBtn.Position = UDim2.new(0.03, 0, 0, 495)
+    ResetBtn.BackgroundColor3 = Color3.fromRGB(60, 20, 20)
+    ResetBtn.Text = "🔄 RESET LISTS"
+    ResetBtn.TextColor3 = COLORS.Error
+    ResetBtn.TextSize = 10
     ResetBtn.Font = Enum.Font.GothamBold
     ResetBtn.Parent = MainFrame
     Instance.new("UICorner", ResetBtn).CornerRadius = UDim.new(0, 6)
     
     ResetBtn.MouseButton1Click:Connect(function()
         ResetTeams()
-        InfoLabel.Text = "Врагов: 0 | Своих: 0"
+        InfoLabel.Text = "Enemies: 0 | Team: 0"
     end)
-    ResetBtn.MouseEnter:Connect(function() ResetBtn.BackgroundColor3 = Color3.fromRGB(80, 50, 50) end)
-    ResetBtn.MouseLeave:Connect(function() ResetBtn.BackgroundColor3 = Color3.fromRGB(60, 40, 40) end)
     
     local CloseBtn = Instance.new("TextButton")
     CloseBtn.Size = UDim2.new(0.45, 0, 0, 30)
-    CloseBtn.Position = UDim2.new(0.52, 0, 0, 470)
-    CloseBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
-    CloseBtn.Text = "ЗАКРЫТЬ"
-    CloseBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    CloseBtn.TextSize = 12
+    CloseBtn.Position = UDim2.new(0.52, 0, 0, 495)
+    CloseBtn.BackgroundColor3 = COLORS.BgPanel
+    CloseBtn.Text = "CLOSE"
+    CloseBtn.TextColor3 = COLORS.Text
+    CloseBtn.TextSize = 11
     CloseBtn.Font = Enum.Font.GothamBold
     CloseBtn.Parent = MainFrame
     Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 6)
@@ -1575,16 +1855,14 @@ local function CreateSettingsPanel()
         MainFrame.Visible = false
         SettingsOpen = false
     end)
-    CloseBtn.MouseEnter:Connect(function() CloseBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 80) end)
-    CloseBtn.MouseLeave:Connect(function() CloseBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 60) end)
     
     local ClearCacheBtn = Instance.new("TextButton")
     ClearCacheBtn.Size = UDim2.new(0.94, 0, 0, 25)
-    ClearCacheBtn.Position = UDim2.new(0.03, 0, 0, 505)
-    ClearCacheBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 50)
-    ClearCacheBtn.Text = "🧹 Очистить кэш"
-    ClearCacheBtn.TextColor3 = Color3.fromRGB(150, 150, 255)
-    ClearCacheBtn.TextSize = 11
+    ClearCacheBtn.Position = UDim2.new(0.03, 0, 0, 530)
+    ClearCacheBtn.BackgroundColor3 = COLORS.BgSection
+    ClearCacheBtn.Text = "🧹 Clear Cache"
+    ClearCacheBtn.TextColor3 = COLORS.Accent
+    ClearCacheBtn.TextSize = 10
     ClearCacheBtn.Font = Enum.Font.GothamBold
     ClearCacheBtn.Parent = MainFrame
     Instance.new("UICorner", ClearCacheBtn).CornerRadius = UDim.new(0, 6)
@@ -1592,10 +1870,8 @@ local function CreateSettingsPanel()
     ClearCacheBtn.MouseButton1Click:Connect(function()
         LastHealthCache = {}
         PendingShots = {}
-        Notify("🧹 Кэш очищен", Color3.fromRGB(150, 150, 255))
+        Notify("Cache cleared", COLORS.Accent)
     end)
-    ClearCacheBtn.MouseEnter:Connect(function() ClearCacheBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 80) end)
-    ClearCacheBtn.MouseLeave:Connect(function() ClearCacheBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 50) end)
     
     return {
         Toggle = function()
@@ -1606,177 +1882,13 @@ local function CreateSettingsPanel()
                 local teamCount = 0
                 for _ in pairs(KnownEnemies) do enemyCount = enemyCount + 1 end
                 for _ in pairs(KnownTeammates) do teamCount = teamCount + 1 end
-                InfoLabel.Text = "Врагов: " .. enemyCount .. " | Своих: " .. teamCount
+                InfoLabel.Text = "Enemies: " .. enemyCount .. " | Team: " .. teamCount
             end
         end,
         Close = function()
             MainFrame.Visible = false
             SettingsOpen = false
         end
-    }
-end
-
--- =====================================================
--- === ГЛАВНОЕ МЕНЮ ===
--- =====================================================
-local function CreateMainMenu()
-    pcall(function()
-        if LocalPlayer.PlayerGui:FindFirstChild("CustomMenu") then
-            LocalPlayer.PlayerGui.CustomMenu:Destroy()
-        end
-    end)
-    
-    local ScreenGui = Instance.new("ScreenGui")
-    ScreenGui.Name = "CustomMenu"
-    ScreenGui.Parent = LocalPlayer.PlayerGui
-    ScreenGui.ResetOnSpawn = false
-    ScreenGui.DisplayOrder = 999
-    
-    local MainFrame = Instance.new("Frame")
-    MainFrame.Size = UDim2.new(0, 240, 0, 380)
-    MainFrame.Position = UDim2.new(0, 10, 0, 40)
-    MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-    MainFrame.BorderColor3 = Color3.fromRGB(60, 60, 60)
-    MainFrame.BorderSizePixel = 1
-    MainFrame.Parent = ScreenGui
-    Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 10)
-    
-    local Title = Instance.new("TextButton")
-    Title.Size = UDim2.new(1, 0, 0, 35)
-    Title.BackgroundTransparency = 1
-    Title.Text = "🔫 TRIGGERBOT  ✥"
-    Title.TextColor3 = Color3.fromRGB(255, 255, 255)
-    Title.TextSize = 18
-    Title.Font = Enum.Font.GothamBold
-    Title.Parent = MainFrame
-    
-    MakeDraggable(MainFrame, Title)
-    
-    local function CreateMenuButton(yPos, text, keybind, getState, toggleFunc)
-        local Container = Instance.new("Frame")
-        Container.Size = UDim2.new(1, -20, 0, 40)
-        Container.Position = UDim2.new(0, 10, 0, yPos)
-        Container.BackgroundTransparency = 1
-        Container.Parent = MainFrame
-        
-        local Button = Instance.new("TextButton")
-        Button.Size = UDim2.new(1, 0, 1, 0)
-        Button.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
-        Button.Text = ""
-        Button.Parent = Container
-        Instance.new("UICorner", Button).CornerRadius = UDim.new(0, 6)
-        
-        local Label = Instance.new("TextLabel")
-        Label.Size = UDim2.new(0.7, 0, 1, 0)
-        Label.Position = UDim2.new(0, 10, 0, 0)
-        Label.BackgroundTransparency = 1
-        Label.Text = text .. " - " .. keybind
-        Label.TextColor3 = Color3.fromRGB(255, 255, 255)
-        Label.TextSize = 13
-        Label.Font = Enum.Font.GothamBold
-        Label.TextXAlignment = Enum.TextXAlignment.Left
-        Label.Parent = Container
-        
-        local IndicatorBg = Instance.new("Frame")
-        IndicatorBg.Size = UDim2.new(0, 20, 0, 20)
-        IndicatorBg.Position = UDim2.new(1, -30, 0, 10)
-        IndicatorBg.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-        IndicatorBg.Parent = Container
-        Instance.new("UICorner", IndicatorBg).CornerRadius = UDim.new(1, 0)
-        
-        local Indicator = Instance.new("Frame")
-        Indicator.Size = UDim2.new(0, 14, 0, 14)
-        Indicator.Position = UDim2.new(0, 3, 0, 3)
-        Indicator.BackgroundColor3 = getState and getState() and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
-        Indicator.Parent = IndicatorBg
-        Instance.new("UICorner", Indicator).CornerRadius = UDim.new(1, 0)
-        
-        Button.MouseEnter:Connect(function() Button.BackgroundColor3 = Color3.fromRGB(50, 50, 50) end)
-        Button.MouseLeave:Connect(function() Button.BackgroundColor3 = Color3.fromRGB(35, 35, 35) end)
-        Button.MouseButton1Click:Connect(function()
-            if toggleFunc then
-                toggleFunc()
-                Indicator.BackgroundColor3 = getState and getState() and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
-            end
-        end)
-        
-        return Button, Indicator
-    end
-    
-    local btn1, ind1 = CreateMenuButton(40, "TRIGGERBOT", "F1", 
-        function() return Settings.TriggerBot end, function() ToggleTrigger() end)
-    local btn2, ind2 = CreateMenuButton(85, "ESP", "F2",
-        function() return ESPEnabled end, function() ToggleESP() end)
-    local btn3, ind3 = CreateMenuButton(130, "ИГНОР-ЛИСТ", "F3",
-        function() return IgnoreListEnabled and #IgnoreList > 0 end, function() ToggleIgnoreList() end)
-    local btn4, ind4 = CreateMenuButton(175, "ПОЛЕТ", "F4",
-        function() return FlyEnabled end, function() ToggleFly() end)
-    local btn5, ind5 = CreateMenuButton(220, "ДОВОДКА", "F5",
-        function() return Settings.AimAssist end, function() ToggleAim() end)
-    local btn6, ind6 = CreateMenuButton(265, "WALLCHECK", "F6",
-        function() return Settings.WallCheck end, function() ToggleWall() end)
-    
-    local PickerBtn = Instance.new("TextButton")
-    PickerBtn.Size = UDim2.new(0, 220, 0, 30)
-    PickerBtn.Position = UDim2.new(0, 10, 0, 305)
-    PickerBtn.BackgroundColor3 = Color3.fromRGB(60, 40, 80)
-    PickerBtn.Text = "👥 ВЫБОР ИГРОКОВ - F10"
-    PickerBtn.TextColor3 = Color3.fromRGB(220, 180, 255)
-    PickerBtn.Font = Enum.Font.GothamBold
-    PickerBtn.TextSize = 12
-    PickerBtn.Parent = MainFrame
-    Instance.new("UICorner", PickerBtn).CornerRadius = UDim.new(0, 6)
-    
-    PickerBtn.MouseEnter:Connect(function() PickerBtn.BackgroundColor3 = Color3.fromRGB(80, 55, 110) end)
-    PickerBtn.MouseLeave:Connect(function() PickerBtn.BackgroundColor3 = Color3.fromRGB(60, 40, 80) end)
-    PickerBtn.MouseButton1Click:Connect(function()
-        if PlayerPickerPanel then PlayerPickerPanel.Toggle() end
-    end)
-    
-    local SettingsBtn = Instance.new("TextButton")
-    SettingsBtn.Size = UDim2.new(0, 105, 0, 30)
-    SettingsBtn.Position = UDim2.new(0, 10, 0, 340)
-    SettingsBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 70)
-    SettingsBtn.TextColor3 = Color3.fromRGB(200, 200, 255)
-    SettingsBtn.Font = Enum.Font.GothamBold
-    SettingsBtn.TextSize = 12
-    SettingsBtn.Text = "⚙️ НАСТРОЙКИ"
-    SettingsBtn.Parent = MainFrame
-    Instance.new("UICorner", SettingsBtn).CornerRadius = UDim.new(0, 6)
-    
-    SettingsBtn.MouseEnter:Connect(function() SettingsBtn.BackgroundColor3 = Color3.fromRGB(70, 70, 90) end)
-    SettingsBtn.MouseLeave:Connect(function() SettingsBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 70) end)
-    SettingsBtn.MouseButton1Click:Connect(function()
-        if SettingsPanel then SettingsPanel.Toggle() end
-    end)
-    
-    local DeleteBtn = Instance.new("TextButton")
-    DeleteBtn.Size = UDim2.new(0, 105, 0, 30)
-    DeleteBtn.Position = UDim2.new(0, 125, 0, 340)
-    DeleteBtn.BackgroundColor3 = Color3.fromRGB(70, 30, 30)
-    DeleteBtn.TextColor3 = Color3.fromRGB(255, 200, 200)
-    DeleteBtn.Font = Enum.Font.GothamBold
-    DeleteBtn.TextSize = 12
-    DeleteBtn.Text = "🗑 УДАЛИТЬ"
-    DeleteBtn.Parent = MainFrame
-    Instance.new("UICorner", DeleteBtn).CornerRadius = UDim.new(0, 6)
-    
-    DeleteBtn.MouseEnter:Connect(function() DeleteBtn.BackgroundColor3 = Color3.fromRGB(90, 40, 40) end)
-    DeleteBtn.MouseLeave:Connect(function() DeleteBtn.BackgroundColor3 = Color3.fromRGB(70, 30, 30) end)
-    DeleteBtn.MouseButton1Click:Connect(function() DeleteScript() end)
-    
-    local function UpdateIndicators()
-        ind1.BackgroundColor3 = Settings.TriggerBot and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
-        ind2.BackgroundColor3 = ESPEnabled and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
-        ind3.BackgroundColor3 = (IgnoreListEnabled and #IgnoreList > 0) and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
-        ind4.BackgroundColor3 = FlyEnabled and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
-        ind5.BackgroundColor3 = Settings.AimAssist and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
-        ind6.BackgroundColor3 = Settings.WallCheck and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
-    end
-    
-    return {
-        Update = function() UpdateIndicators() end,
-        Destroy = function() ScreenGui:Destroy() end
     }
 end
 
@@ -1792,21 +1904,21 @@ function ToggleTrigger()
     if not ScriptRunning then return end
     Settings.TriggerBot = not Settings.TriggerBot
     if GUI and GUI.Update then GUI.Update() end
-    Notify("🎯 TriggerBot " .. (Settings.TriggerBot and "ВКЛ" or "ВЫКЛ"), Settings.TriggerBot and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 100, 100))
+    Notify("🎯 TriggerBot " .. (Settings.TriggerBot and "ON" or "OFF"), Settings.TriggerBot and COLORS.Success or COLORS.Error)
 end
 
 function ToggleWall()
     if not ScriptRunning then return end
     Settings.WallCheck = not Settings.WallCheck
     if GUI and GUI.Update then GUI.Update() end
-    Notify("🧱 WallCheck " .. (Settings.WallCheck and "ВКЛ" or "ВЫКЛ"), Settings.WallCheck and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 100, 100))
+    Notify("🧱 WallCheck " .. (Settings.WallCheck and "ON" or "OFF"), Settings.WallCheck and COLORS.Success or COLORS.Error)
 end
 
 function ToggleAim()
     if not ScriptRunning then return end
     Settings.AimAssist = not Settings.AimAssist
     if GUI and GUI.Update then GUI.Update() end
-    Notify("🎯 Доводка " .. (Settings.AimAssist and "ВКЛ" or "ВЫКЛ"), Settings.AimAssist and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 100, 100))
+    Notify("🎯 Aim Assist " .. (Settings.AimAssist and "ON" or "OFF"), Settings.AimAssist and COLORS.Success or COLORS.Error)
 end
 
 function ToggleIgnoreList()
@@ -1814,7 +1926,7 @@ function ToggleIgnoreList()
     IgnoreListEnabled = not IgnoreListEnabled
     if GUI and GUI.Update then GUI.Update() end
     if ESPEnabled then CreateESP() end
-    Notify("👤 Игнор-лист " .. (IgnoreListEnabled and "ВКЛ" or "ВЫКЛ"), Color3.fromRGB(200, 200, 255))
+    Notify("👤 Ignore List " .. (IgnoreListEnabled and "ON" or "OFF"), COLORS.AccentGlow)
 end
 
 function ToggleFly()
@@ -1828,7 +1940,7 @@ function ToggleESP()
     ESPEnabled = not ESPEnabled
     
     if ESPEnabled then
-        Notify("👁️ ESP ВКЛ", Color3.fromRGB(0, 255, 200))
+        Notify("👁️ ESP ON", COLORS.AccentGlow)
         CreateESP()
         ESPConnection = RunService.Heartbeat:Connect(function()
             if ESPEnabled and tick() - LastESPUpdate > 2 then
@@ -1837,7 +1949,7 @@ function ToggleESP()
             end
         end)
     else
-        Notify("👁️ ESP ВЫКЛ", Color3.fromRGB(255, 100, 100))
+        Notify("👁️ ESP OFF", COLORS.Error)
         if ESPConnection then ESPConnection:Disconnect(); ESPConnection = nil end
         ClearESP()
     end
@@ -1851,11 +1963,11 @@ function ResetTeams()
     LastCheckShot = {}
     ManualEnemies = {}
     ManualTeammates = {}
-    Notify("🔄 Все списки сброшены", Color3.fromRGB(255, 200, 100))
+    Notify("🔄 All lists reset", COLORS.Warning)
 end
 
 function DeleteScript()
-    Notify("🗑 Скрипт удален", Color3.fromRGB(255, 100, 100))
+    Notify("🗑 Script deleted", COLORS.Error)
     ScriptRunning = false
     if FlyEnabled then StopFly() end
     if ESPEnabled then
@@ -1884,9 +1996,6 @@ PlayerPickerPanel = CreatePlayerPicker()
 StartHealthTracking()
 StartLoop()
 
--- =====================================================
--- === СОБЫТИЯ ===
--- =====================================================
 LocalPlayer.CharacterAdded:Connect(function()
     task.wait(1)
     if PlayerPickerPanel and PlayerPickerPanel.Refresh then
@@ -1963,12 +2072,9 @@ RunService.Heartbeat:Connect(function()
 end)
 
 print("====================================================")
-print("🔫 TRIGGERBOT v16")
+print("🔫 TRIGGERBOT v18 (компактное меню)")
 print("====================================================")
-print("📢 F1-F6, F10, Insert, Delete")
-print("🆕 Игнор-лист = автоматически СВОИ")
-print("👤 Игнор-лист:")
-for _, name in ipairs(IgnoreList) do
-    print("   • " .. name)
-end
+print("🎨 3 кружка: Trigger, ESP, Fly")
+print("📐 Меню уменьшено (300x280)")
+print("❌ Убраны боковые вкладки")
 print("====================================================")
