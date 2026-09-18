@@ -49,7 +49,7 @@ local Settings = {
     CheckShotCooldown = 5,
     AimPrecision = 20,
     AdaptiveWallCheck = true,
-    AimOffset = 1.8,
+    AimOffset = 2.3,
     FlySpeed = 30,
 }
 
